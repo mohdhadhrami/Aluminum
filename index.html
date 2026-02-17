@@ -826,20 +826,22 @@
         const costPerMeter = metalPerMeter + mfgPerMeter + paintPerMeter;
         const costPiece = costPerMeter * length;
 
+        // Cost with VAT included
+        const costPieceWithVAT = costPiece * (1 + inputs.vatPercent / 100);
+
         let sellPrice, finalPrice, profit, pricePerMeter;
 
         if (inputs.taxMode === 'accounting') {
             // Accounting mode: VAT on sell price
-            const sellBeforeVAT = costPiece * (1 + inputs.profitPercent / 100);
+            const sellBeforeVAT = costPieceWithVAT * (1 + inputs.profitPercent / 100);
             finalPrice = sellBeforeVAT * (1 + inputs.vatPercent / 100);
-            profit = sellBeforeVAT - costPiece;
+            profit = sellBeforeVAT - costPieceWithVAT;
             sellPrice = finalPrice;
             pricePerMeter = sellBeforeVAT / length;
         } else {
             // Industrial mode: VAT on cost
-            const costWithVAT = costPiece * (1 + inputs.vatPercent / 100);
-            finalPrice = costWithVAT * (1 + inputs.profitPercent / 100);
-            profit = finalPrice - costWithVAT;
+            finalPrice = costPieceWithVAT * (1 + inputs.profitPercent / 100);
+            profit = finalPrice - costPieceWithVAT;
             sellPrice = finalPrice;
             pricePerMeter = finalPrice / length;
         }
@@ -847,7 +849,7 @@
         const pricePerM2 = pricePerMeter * SQM_TO_LINEAR;
 
         return {
-            costPiece,
+            costPiece: costPieceWithVAT,
             sellPrice,
             profit,
             pricePerMeter,
