@@ -665,27 +665,27 @@
                 <div class="summary-grid">
                     <div class="summary-item">
                         <div class="label">إجمالي التكلفة</div>
-                        <div class="value" id="sumCost">0.000</div>
+                        <div class="value" id="sumCost">0.00</div>
                         <div class="currency">ريال عماني</div>
                     </div>
                     <div class="summary-item accent">
                         <div class="label">إجمالي البيع</div>
-                        <div class="value" id="sumSell">0.000</div>
+                        <div class="value" id="sumSell">0.00</div>
                         <div class="currency">ريال عماني</div>
                     </div>
                     <div class="summary-item success">
                         <div class="label">إجمالي الربح</div>
-                        <div class="value" id="sumProfit">0.000</div>
+                        <div class="value" id="sumProfit">0.00</div>
                         <div class="currency">ريال عماني</div>
                     </div>
                     <div class="summary-item">
                         <div class="label">متوسط سعر المتر</div>
-                        <div class="value" id="avgMeter">0.000</div>
+                        <div class="value" id="avgMeter">0.00</div>
                         <div class="currency">ريال عماني</div>
                     </div>
                     <div class="summary-item accent">
                         <div class="label">متوسط سعر المتر المربع</div>
-                        <div class="value" id="avgM2">0.000</div>
+                        <div class="value" id="avgM2">0.00</div>
                         <div class="currency">ريال عماني</div>
                     </div>
                 </div>
@@ -741,7 +741,7 @@
                 <div class="calc-result-grid">
                     <div class="calc-result-card">
                         <div class="result-label">إجمالي الطول</div>
-                        <div class="result-value" id="wResLength">0.000</div>
+                        <div class="result-value" id="wResLength">0.00</div>
                         <div class="result-unit">متر</div>
                     </div>
                     <div class="calc-result-card">
@@ -751,22 +751,22 @@
                     </div>
                     <div class="calc-result-card">
                         <div class="result-label">تكلفة المتر</div>
-                        <div class="result-value" id="wResCostMeter">0.000</div>
+                        <div class="result-value" id="wResCostMeter">0.00</div>
                         <div class="result-unit">ريال عماني</div>
                     </div>
                     <div class="calc-result-card">
                         <div class="result-label">تكلفة المتر المربع</div>
-                        <div class="result-value" id="wResCostM2">0.000</div>
+                        <div class="result-value" id="wResCostM2">0.00</div>
                         <div class="result-unit">ريال عماني</div>
                     </div>
                     <div class="calc-result-card">
                         <div class="result-label">تكلفة الشريحة الواحدة</div>
-                        <div class="result-value" id="wResCostPiece">0.000</div>
+                        <div class="result-value" id="wResCostPiece">0.00</div>
                         <div class="result-unit">ريال عماني</div>
                     </div>
                     <div class="calc-result-card">
                         <div class="result-label">إجمالي التكلفة</div>
-                        <div class="result-value" id="wResCostTotal">0.000</div>
+                        <div class="result-value" id="wResCostTotal">0.00</div>
                         <div class="result-unit">ريال عماني</div>
                     </div>
                 </div>
@@ -941,11 +941,11 @@
                 <td>${item.thickness} ملم</td>
                 <td>${isPainted ? 'مصبوغ' : 'بدون صبغ'}</td>
                 <td>${item.length.toFixed(3)}</td>
-                <td>${calc.costPiece.toFixed(3)}</td>
-                <td>${calc.sellPrice.toFixed(3)}</td>
-                <td>${calc.profit.toFixed(3)}</td>
-                <td>${calc.pricePerMeter.toFixed(3)}</td>
-                <td>${calc.pricePerM2.toFixed(3)}</td>
+                <td>${calc.costPiece.toFixed(2)}</td>
+                <td>${calc.sellPrice.toFixed(2)}</td>
+                <td>${calc.profit.toFixed(2)}</td>
+                <td>${calc.pricePerMeter.toFixed(2)}</td>
+                <td>${calc.pricePerM2.toFixed(2)}</td>
                 <td><button class="btn btn-danger" onclick="removeItem(${index})">حذف</button></td>
             `;
             tbody.appendChild(tr);
@@ -953,11 +953,11 @@
 
         // Update summary
         const count = items.length;
-        document.getElementById('sumCost').textContent = totalCost.toFixed(3);
-        document.getElementById('sumSell').textContent = totalSell.toFixed(3);
-        document.getElementById('sumProfit').textContent = totalProfit.toFixed(3);
-        document.getElementById('avgMeter').textContent = (totalMeterPrice / count).toFixed(3);
-        document.getElementById('avgM2').textContent = (totalM2Price / count).toFixed(3);
+        document.getElementById('sumCost').textContent = totalCost.toFixed(2);
+        document.getElementById('sumSell').textContent = totalSell.toFixed(2);
+        document.getElementById('sumProfit').textContent = totalProfit.toFixed(2);
+        document.getElementById('avgMeter').textContent = (totalMeterPrice / count).toFixed(2);
+        document.getElementById('avgM2').textContent = (totalM2Price / count).toFixed(2);
 
         // Also update weight calculator if visible
         calcWeight();
@@ -1011,12 +1011,12 @@
     }
 
     function setWeightResults(length, pieces, costMeter, costM2, costPiece, costTotal) {
-        document.getElementById('wResLength').textContent = length.toFixed(3);
+        document.getElementById('wResLength').textContent = length.toFixed(2);
         document.getElementById('wResPieces').textContent = Math.floor(pieces);
-        document.getElementById('wResCostMeter').textContent = costMeter.toFixed(3);
-        document.getElementById('wResCostM2').textContent = costM2.toFixed(3);
-        document.getElementById('wResCostPiece').textContent = costPiece.toFixed(3);
-        document.getElementById('wResCostTotal').textContent = costTotal.toFixed(3);
+        document.getElementById('wResCostMeter').textContent = costMeter.toFixed(2);
+        document.getElementById('wResCostM2').textContent = costM2.toFixed(2);
+        document.getElementById('wResCostPiece').textContent = costPiece.toFixed(2);
+        document.getElementById('wResCostTotal').textContent = costTotal.toFixed(2);
     }
 
     /* =============================================================
@@ -1155,11 +1155,11 @@
                 item.thickness + ' mm',
                 isPainted ? 'Painted' : 'Unpainted',
                 item.length.toFixed(3),
-                calc.costPiece.toFixed(3),
-                calc.sellPrice.toFixed(3),
-                calc.profit.toFixed(3),
-                calc.pricePerMeter.toFixed(3),
-                calc.pricePerM2.toFixed(3)
+                calc.costPiece.toFixed(2),
+                calc.sellPrice.toFixed(2),
+                calc.profit.toFixed(2),
+                calc.pricePerMeter.toFixed(2),
+                calc.pricePerM2.toFixed(2)
             ];
 
             cx = tableStartX;
@@ -1231,11 +1231,11 @@
         doc.setTextColor(...white);
 
         const summaryItems = [
-            'Total Cost: ' + totalCost.toFixed(3) + ' OMR',
-            'Total Sale: ' + totalSell.toFixed(3) + ' OMR',
-            'Total Profit: ' + totalProfit.toFixed(3) + ' OMR',
-            'Avg Price/m: ' + avgMeter.toFixed(3) + ' OMR',
-            'Avg Price/m2: ' + avgM2.toFixed(3) + ' OMR'
+            'Total Cost: ' + totalCost.toFixed(2) + ' OMR',
+            'Total Sale: ' + totalSell.toFixed(2) + ' OMR',
+            'Total Profit: ' + totalProfit.toFixed(2) + ' OMR',
+            'Avg Price/m: ' + avgMeter.toFixed(2) + ' OMR',
+            'Avg Price/m2: ' + avgM2.toFixed(2) + ' OMR'
         ];
 
         const sumSpacing = totalTableWidth / summaryItems.length;
