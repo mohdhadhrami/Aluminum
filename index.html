@@ -1,0 +1,1259 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام تسعير شرائح الألمنيوم</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        /* ===== CSS Variables & Reset ===== */
+        :root {
+            --primary: #1a5276;
+            --primary-light: #2980b9;
+            --primary-dark: #0e2f44;
+            --accent: #e67e22;
+            --accent-light: #f39c12;
+            --success: #27ae60;
+            --danger: #e74c3c;
+            --bg: #f0f2f5;
+            --card-bg: #ffffff;
+            --text: #2c3e50;
+            --text-light: #7f8c8d;
+            --border: #dce1e8;
+            --shadow: 0 2px 12px rgba(0,0,0,0.08);
+            --radius: 10px;
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            direction: rtl;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        /* ===== Header ===== */
+        .app-header {
+            background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+            color: white;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .app-header h1 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .header-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--accent);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        /* ===== Tabs ===== */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 4px;
+        }
+
+        .tab-btn {
+            padding: 8px 20px;
+            border: none;
+            background: transparent;
+            color: rgba(255,255,255,0.7);
+            cursor: pointer;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-family: inherit;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .tab-btn:hover {
+            background: rgba(255,255,255,0.15);
+            color: white;
+        }
+
+        .tab-btn.active {
+            background: white;
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        /* ===== Main Container ===== */
+        .main-container {
+            max-width: 1300px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* ===== Cards ===== */
+        .card {
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 24px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid var(--bg);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .card-title .icon {
+            width: 28px;
+            height: 28px;
+            background: var(--primary);
+            color: white;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        /* ===== Form Grid ===== */
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-group label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .form-group .unit {
+            font-size: 0.75rem;
+            color: var(--text-light);
+            font-weight: 400;
+        }
+
+        .form-group input,
+        .form-group select {
+            padding: 10px 14px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            direction: rtl;
+            transition: border-color 0.2s;
+            background: white;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--primary-light);
+            box-shadow: 0 0 0 3px rgba(41,128,185,0.1);
+        }
+
+        .form-group input[type="number"] {
+            -moz-appearance: textfield;
+        }
+
+        .form-group input[type="number"]::-webkit-outer-spin-button,
+        .form-group input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+        }
+
+        /* ===== Tax Toggle ===== */
+        .tax-toggle {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .tax-toggle label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            padding: 8px 16px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .tax-toggle label:hover {
+            border-color: var(--primary-light);
+        }
+
+        .tax-toggle input[type="radio"] {
+            display: none;
+        }
+
+        .tax-toggle input[type="radio"]:checked + label {
+            border-color: var(--primary);
+            background: rgba(26,82,118,0.05);
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        /* ===== Items Section ===== */
+        .items-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .add-item-form {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+            padding: 16px;
+            background: var(--bg);
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .add-item-form .form-group {
+            min-width: 140px;
+        }
+
+        /* ===== Buttons ===== */
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-family: inherit;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-light);
+        }
+
+        .btn-accent {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-accent:hover {
+            background: var(--accent-light);
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #2ecc71;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+            padding: 6px 12px;
+            font-size: 0.8rem;
+        }
+
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+
+        .btn-outline {
+            background: transparent;
+            color: var(--danger);
+            border: 2px solid var(--danger);
+            padding: 6px 12px;
+            font-size: 0.8rem;
+        }
+
+        .btn-outline:hover {
+            background: var(--danger);
+            color: white;
+        }
+
+        /* ===== Table ===== */
+        .table-wrapper {
+            overflow-x: auto;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.88rem;
+        }
+
+        thead {
+            background: var(--primary);
+            color: white;
+        }
+
+        thead th {
+            padding: 12px 14px;
+            text-align: center;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        tbody tr {
+            transition: background 0.15s;
+        }
+
+        tbody tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        tbody tr:hover {
+            background: #edf2f7;
+        }
+
+        tbody td {
+            padding: 10px 14px;
+            text-align: center;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+
+        .empty-message {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-light);
+            font-size: 0.95rem;
+        }
+
+        /* ===== Summary Cards ===== */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 14px;
+            margin-top: 20px;
+        }
+
+        .summary-item {
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            color: white;
+            border-radius: var(--radius);
+            padding: 16px;
+            text-align: center;
+        }
+
+        .summary-item.accent {
+            background: linear-gradient(135deg, var(--accent), var(--accent-light));
+        }
+
+        .summary-item.success {
+            background: linear-gradient(135deg, var(--success), #2ecc71);
+        }
+
+        .summary-item .label {
+            font-size: 0.8rem;
+            opacity: 0.9;
+            margin-bottom: 6px;
+        }
+
+        .summary-item .value {
+            font-size: 1.3rem;
+            font-weight: 700;
+        }
+
+        .summary-item .currency {
+            font-size: 0.75rem;
+            opacity: 0.85;
+        }
+
+        /* ===== Weight Calculator ===== */
+        .calc-result-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 14px;
+            margin-top: 20px;
+        }
+
+        .calc-result-card {
+            background: white;
+            border: 2px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            text-align: center;
+            transition: border-color 0.2s;
+        }
+
+        .calc-result-card:hover {
+            border-color: var(--primary-light);
+        }
+
+        .calc-result-card .result-label {
+            font-size: 0.8rem;
+            color: var(--text-light);
+            margin-bottom: 6px;
+        }
+
+        .calc-result-card .result-value {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .calc-result-card .result-unit {
+            font-size: 0.75rem;
+            color: var(--text-light);
+        }
+
+        /* ===== Footer ===== */
+        .app-footer {
+            text-align: center;
+            padding: 20px;
+            color: var(--text-light);
+            font-size: 0.8rem;
+            border-top: 1px solid var(--border);
+            margin-top: 40px;
+        }
+
+        /* ===== Responsive ===== */
+        @media (max-width: 768px) {
+            .app-header {
+                flex-direction: column;
+                gap: 12px;
+                text-align: center;
+            }
+
+            .app-header h1 {
+                font-size: 1.1rem;
+            }
+
+            .tabs {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .form-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .add-item-form {
+                flex-direction: column;
+            }
+
+            .add-item-form .form-group {
+                width: 100%;
+            }
+
+            .summary-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .summary-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* ===== Animations ===== */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .card {
+            animation: fadeIn 0.3s ease;
+        }
+
+        /* ===== Print ===== */
+        @media print {
+            .app-header, .tabs, .btn, .add-item-form, .tax-toggle {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header class="app-header">
+        <h1>
+            <span class="header-icon">AL</span>
+            نظام تسعير شرائح الألمنيوم
+        </h1>
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="pricing" onclick="switchTab('pricing')">حاسبة التسعير</button>
+            <button class="tab-btn" data-tab="weight" onclick="switchTab('weight')">حاسبة الوزن</button>
+        </div>
+    </header>
+
+    <div class="main-container">
+
+        <!-- ==================== TAB 1: Pricing Calculator ==================== -->
+        <div id="tab-pricing" class="tab-content active">
+
+            <!-- General Inputs -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">$</span>
+                    المدخلات العامة
+                </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>سعر LME <span class="unit">(دولار/طن)</span></label>
+                        <input type="number" id="lme" value="2300" min="0" step="1" oninput="recalculateAll()">
+                    </div>
+                    <div class="form-group">
+                        <label>المصنعية <span class="unit">(دولار/طن)</span></label>
+                        <input type="number" id="manufacturing" value="800" min="0" step="1" oninput="recalculateAll()">
+                    </div>
+                    <div class="form-group">
+                        <label>الصبغ <span class="unit">(ريال/طن)</span></label>
+                        <input type="number" id="painting" value="200" min="0" step="1" oninput="recalculateAll()">
+                    </div>
+                    <div class="form-group">
+                        <label>سعر صرف الدولار <span class="unit">(ريال عماني)</span></label>
+                        <input type="number" id="exchangeRate" value="0.385" min="0" step="0.001" oninput="recalculateAll()">
+                    </div>
+                    <div class="form-group">
+                        <label>نسبة الربح <span class="unit">(%)</span></label>
+                        <input type="number" id="profitPercent" value="15" min="0" step="0.1" oninput="recalculateAll()">
+                    </div>
+                    <div class="form-group">
+                        <label>نسبة الضريبة VAT <span class="unit">(%)</span></label>
+                        <input type="number" id="vatPercent" value="5" min="0" step="0.1" oninput="recalculateAll()">
+                    </div>
+                </div>
+
+                <!-- Tax Mode Toggle -->
+                <div style="margin-top: 18px;">
+                    <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 8px;">وضع الضريبة:</label>
+                    <div class="tax-toggle">
+                        <input type="radio" name="taxMode" id="taxAccounting" value="accounting" checked onchange="recalculateAll()">
+                        <label for="taxAccounting">محاسبي — الضريبة على البيع</label>
+
+                        <input type="radio" name="taxMode" id="taxIndustrial" value="industrial" onchange="recalculateAll()">
+                        <label for="taxIndustrial">صناعي — الضريبة ضمن التكلفة</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Add Item -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">+</span>
+                    إضافة بند جديد
+                </div>
+                <div class="add-item-form">
+                    <div class="form-group">
+                        <label>السماكة <span class="unit">(ملم)</span></label>
+                        <select id="itemThickness">
+                            <option value="1.1">1.1 ملم</option>
+                            <option value="1.5">1.5 ملم</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>الحالة</label>
+                        <select id="itemPainted">
+                            <option value="painted">مصبوغ</option>
+                            <option value="unpainted">بدون صبغ</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>الطول <span class="unit">(متر)</span></label>
+                        <input type="number" id="itemLength" value="6" min="0.001" step="0.1">
+                    </div>
+                    <div class="form-group" style="justify-content: flex-end;">
+                        <button class="btn btn-primary" onclick="addItem()">إضافة البند</button>
+                    </div>
+                </div>
+
+                <!-- Items Table -->
+                <div class="table-wrapper">
+                    <table id="itemsTable">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>السماكة</th>
+                                <th>الحالة</th>
+                                <th>الطول (م)</th>
+                                <th>التكلفة (ر.ع)</th>
+                                <th>سعر البيع (ر.ع)</th>
+                                <th>الربح (ر.ع)</th>
+                                <th>سعر المتر (ر.ع)</th>
+                                <th>سعر م² (ر.ع)</th>
+                                <th>حذف</th>
+                            </tr>
+                        </thead>
+                        <tbody id="itemsBody">
+                        </tbody>
+                    </table>
+                    <div id="emptyMessage" class="empty-message">لم تتم إضافة بنود بعد. أضف بنداً جديداً من النموذج أعلاه.</div>
+                </div>
+            </div>
+
+            <!-- Summary -->
+            <div class="card" id="summaryCard" style="display:none;">
+                <div class="card-title">
+                    <span class="icon">=</span>
+                    الملخص الإجمالي
+                </div>
+                <div class="summary-grid">
+                    <div class="summary-item">
+                        <div class="label">إجمالي التكلفة</div>
+                        <div class="value" id="sumCost">0.000</div>
+                        <div class="currency">ريال عماني</div>
+                    </div>
+                    <div class="summary-item accent">
+                        <div class="label">إجمالي البيع</div>
+                        <div class="value" id="sumSell">0.000</div>
+                        <div class="currency">ريال عماني</div>
+                    </div>
+                    <div class="summary-item success">
+                        <div class="label">إجمالي الربح</div>
+                        <div class="value" id="sumProfit">0.000</div>
+                        <div class="currency">ريال عماني</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="label">متوسط سعر المتر</div>
+                        <div class="value" id="avgMeter">0.000</div>
+                        <div class="currency">ريال عماني</div>
+                    </div>
+                    <div class="summary-item accent">
+                        <div class="label">متوسط سعر المتر المربع</div>
+                        <div class="value" id="avgM2">0.000</div>
+                        <div class="currency">ريال عماني</div>
+                    </div>
+                </div>
+
+                <!-- PDF and Clear Buttons -->
+                <div style="margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-success" onclick="generatePDF()">تصدير PDF</button>
+                    <button class="btn btn-outline" onclick="clearAllItems()">مسح جميع البنود</button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ==================== TAB 2: Weight Calculator ==================== -->
+        <div id="tab-weight" class="tab-content">
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">W</span>
+                    حاسبة تحويل الوزن إلى أطوال وعدد قطع
+                </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>الوزن <span class="unit">(كيلوجرام)</span></label>
+                        <input type="number" id="wCalcWeight" value="1000" min="0" step="1" oninput="calcWeight()">
+                    </div>
+                    <div class="form-group">
+                        <label>السماكة <span class="unit">(ملم)</span></label>
+                        <select id="wCalcThickness" oninput="calcWeight()">
+                            <option value="1.1">1.1 ملم</option>
+                            <option value="1.5">1.5 ملم</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>الحالة</label>
+                        <select id="wCalcPainted" oninput="calcWeight()">
+                            <option value="painted">مصبوغ</option>
+                            <option value="unpainted">بدون صبغ</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>طول الشريحة <span class="unit">(متر)</span></label>
+                        <input type="number" id="wCalcPieceLength" value="6" min="0.001" step="0.1" oninput="calcWeight()">
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">R</span>
+                    النتائج
+                </div>
+                <div class="calc-result-grid">
+                    <div class="calc-result-card">
+                        <div class="result-label">إجمالي الطول</div>
+                        <div class="result-value" id="wResLength">0.000</div>
+                        <div class="result-unit">متر</div>
+                    </div>
+                    <div class="calc-result-card">
+                        <div class="result-label">عدد القطع التقريبي</div>
+                        <div class="result-value" id="wResPieces">0</div>
+                        <div class="result-unit">قطعة</div>
+                    </div>
+                    <div class="calc-result-card">
+                        <div class="result-label">تكلفة المتر</div>
+                        <div class="result-value" id="wResCostMeter">0.000</div>
+                        <div class="result-unit">ريال عماني</div>
+                    </div>
+                    <div class="calc-result-card">
+                        <div class="result-label">تكلفة المتر المربع</div>
+                        <div class="result-value" id="wResCostM2">0.000</div>
+                        <div class="result-unit">ريال عماني</div>
+                    </div>
+                    <div class="calc-result-card">
+                        <div class="result-label">تكلفة الشريحة الواحدة</div>
+                        <div class="result-value" id="wResCostPiece">0.000</div>
+                        <div class="result-unit">ريال عماني</div>
+                    </div>
+                    <div class="calc-result-card">
+                        <div class="result-label">إجمالي التكلفة</div>
+                        <div class="result-value" id="wResCostTotal">0.000</div>
+                        <div class="result-unit">ريال عماني</div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        نظام تسعير شرائح الألمنيوم — يعمل محلياً بالكامل بدون اتصال بالإنترنت
+    </footer>
+
+    <script>
+    /* =============================================================
+       Industrial Constants
+       ============================================================= */
+    const WEIGHT_PER_METER = {
+        '1.1': 0.63,
+        '1.5': 0.839
+    };
+    const SLAT_HEIGHT = 0.076; // 7.6 cm
+    const SQM_TO_LINEAR = 13;  // 1 m² = 13 linear meters
+
+    /* =============================================================
+       Items Store
+       ============================================================= */
+    let items = [];
+
+    /* =============================================================
+       Helper: Get General Inputs
+       ============================================================= */
+    function getInputs() {
+        return {
+            lme: parseFloat(document.getElementById('lme').value) || 0,
+            manufacturing: parseFloat(document.getElementById('manufacturing').value) || 0,
+            painting: parseFloat(document.getElementById('painting').value) || 0,
+            exchangeRate: parseFloat(document.getElementById('exchangeRate').value) || 0,
+            profitPercent: parseFloat(document.getElementById('profitPercent').value) || 0,
+            vatPercent: parseFloat(document.getElementById('vatPercent').value) || 0,
+            taxMode: document.querySelector('input[name="taxMode"]:checked').value
+        };
+    }
+
+    /* =============================================================
+       Core Calculation for One Item
+       ============================================================= */
+    function calculateItem(thickness, isPainted, length, inputs) {
+        const weight = WEIGHT_PER_METER[thickness] || 0.63;
+
+        // Cost per meter components
+        const metalPerMeter = (inputs.lme / 1000) * weight * inputs.exchangeRate;
+        const mfgPerMeter = (inputs.manufacturing / 1000) * weight * inputs.exchangeRate;
+        const paintPerMeter = isPainted ? (inputs.painting / 1000) * weight : 0;
+
+        const costPerMeter = metalPerMeter + mfgPerMeter + paintPerMeter;
+        const costPiece = costPerMeter * length;
+
+        let sellPrice, finalPrice, profit, pricePerMeter;
+
+        if (inputs.taxMode === 'accounting') {
+            // Accounting mode: VAT on sell price
+            const sellBeforeVAT = costPiece * (1 + inputs.profitPercent / 100);
+            finalPrice = sellBeforeVAT * (1 + inputs.vatPercent / 100);
+            profit = sellBeforeVAT - costPiece;
+            sellPrice = finalPrice;
+            pricePerMeter = sellBeforeVAT / length;
+        } else {
+            // Industrial mode: VAT on cost
+            const costWithVAT = costPiece * (1 + inputs.vatPercent / 100);
+            finalPrice = costWithVAT * (1 + inputs.profitPercent / 100);
+            profit = finalPrice - costWithVAT;
+            sellPrice = finalPrice;
+            pricePerMeter = finalPrice / length;
+        }
+
+        const pricePerM2 = pricePerMeter * SQM_TO_LINEAR;
+
+        return {
+            costPiece,
+            sellPrice,
+            profit,
+            pricePerMeter,
+            pricePerM2,
+            costPerMeter
+        };
+    }
+
+    /* =============================================================
+       Add Item
+       ============================================================= */
+    function addItem() {
+        const thickness = document.getElementById('itemThickness').value;
+        const painted = document.getElementById('itemPainted').value;
+        const length = parseFloat(document.getElementById('itemLength').value);
+
+        if (!length || length <= 0) {
+            alert('يرجى إدخال طول صحيح أكبر من صفر.');
+            return;
+        }
+
+        items.push({
+            thickness,
+            painted,
+            length
+        });
+
+        recalculateAll();
+    }
+
+    /* =============================================================
+       Remove Item
+       ============================================================= */
+    function removeItem(index) {
+        items.splice(index, 1);
+        recalculateAll();
+    }
+
+    /* =============================================================
+       Clear All Items
+       ============================================================= */
+    function clearAllItems() {
+        if (items.length === 0) return;
+        if (confirm('هل تريد مسح جميع البنود؟')) {
+            items = [];
+            recalculateAll();
+        }
+    }
+
+    /* =============================================================
+       Recalculate All Items & Update UI
+       ============================================================= */
+    function recalculateAll() {
+        const inputs = getInputs();
+        const tbody = document.getElementById('itemsBody');
+        const emptyMsg = document.getElementById('emptyMessage');
+        const summaryCard = document.getElementById('summaryCard');
+
+        tbody.innerHTML = '';
+
+        if (items.length === 0) {
+            emptyMsg.style.display = 'block';
+            summaryCard.style.display = 'none';
+            return;
+        }
+
+        emptyMsg.style.display = 'none';
+        summaryCard.style.display = 'block';
+
+        let totalCost = 0;
+        let totalSell = 0;
+        let totalProfit = 0;
+        let totalMeterPrice = 0;
+        let totalM2Price = 0;
+
+        items.forEach((item, index) => {
+            const isPainted = item.painted === 'painted';
+            const calc = calculateItem(item.thickness, isPainted, item.length, inputs);
+
+            totalCost += calc.costPiece;
+            totalSell += calc.sellPrice;
+            totalProfit += calc.profit;
+            totalMeterPrice += calc.pricePerMeter;
+            totalM2Price += calc.pricePerM2;
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${index + 1}</td>
+                <td>${item.thickness} ملم</td>
+                <td>${isPainted ? 'مصبوغ' : 'بدون صبغ'}</td>
+                <td>${item.length.toFixed(3)}</td>
+                <td>${calc.costPiece.toFixed(3)}</td>
+                <td>${calc.sellPrice.toFixed(3)}</td>
+                <td>${calc.profit.toFixed(3)}</td>
+                <td>${calc.pricePerMeter.toFixed(3)}</td>
+                <td>${calc.pricePerM2.toFixed(3)}</td>
+                <td><button class="btn btn-danger" onclick="removeItem(${index})">حذف</button></td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        // Update summary
+        const count = items.length;
+        document.getElementById('sumCost').textContent = totalCost.toFixed(3);
+        document.getElementById('sumSell').textContent = totalSell.toFixed(3);
+        document.getElementById('sumProfit').textContent = totalProfit.toFixed(3);
+        document.getElementById('avgMeter').textContent = (totalMeterPrice / count).toFixed(3);
+        document.getElementById('avgM2').textContent = (totalM2Price / count).toFixed(3);
+
+        // Also update weight calculator if visible
+        calcWeight();
+    }
+
+    /* =============================================================
+       Tab Switching
+       ============================================================= */
+    function switchTab(tabId) {
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('tab-' + tabId).classList.add('active');
+        document.querySelector(`.tab-btn[data-tab="${tabId}"]`).classList.add('active');
+
+        if (tabId === 'weight') {
+            calcWeight();
+        }
+    }
+
+    /* =============================================================
+       Weight Calculator
+       ============================================================= */
+    function calcWeight() {
+        const weightKg = parseFloat(document.getElementById('wCalcWeight').value) || 0;
+        const thickness = document.getElementById('wCalcThickness').value;
+        const isPainted = document.getElementById('wCalcPainted').value === 'painted';
+        const pieceLength = parseFloat(document.getElementById('wCalcPieceLength').value) || 0;
+
+        const wpm = WEIGHT_PER_METER[thickness] || 0.63;
+
+        if (wpm === 0 || pieceLength <= 0) {
+            setWeightResults(0, 0, 0, 0, 0, 0);
+            return;
+        }
+
+        const totalLength = weightKg / wpm;
+        const pieces = totalLength / pieceLength;
+
+        // Get cost per meter from main system inputs
+        const inputs = getInputs();
+        const metalPerMeter = (inputs.lme / 1000) * wpm * inputs.exchangeRate;
+        const mfgPerMeter = (inputs.manufacturing / 1000) * wpm * inputs.exchangeRate;
+        const paintPerMeter = isPainted ? (inputs.painting / 1000) * wpm : 0;
+        const costPerMeter = metalPerMeter + mfgPerMeter + paintPerMeter;
+
+        const costPiece = costPerMeter * pieceLength;
+        const costTotal = costPerMeter * totalLength;
+        const costM2 = costPerMeter * SQM_TO_LINEAR;
+
+        setWeightResults(totalLength, pieces, costPerMeter, costM2, costPiece, costTotal);
+    }
+
+    function setWeightResults(length, pieces, costMeter, costM2, costPiece, costTotal) {
+        document.getElementById('wResLength').textContent = length.toFixed(3);
+        document.getElementById('wResPieces').textContent = Math.floor(pieces);
+        document.getElementById('wResCostMeter').textContent = costMeter.toFixed(3);
+        document.getElementById('wResCostM2').textContent = costM2.toFixed(3);
+        document.getElementById('wResCostPiece').textContent = costPiece.toFixed(3);
+        document.getElementById('wResCostTotal').textContent = costTotal.toFixed(3);
+    }
+
+    /* =============================================================
+       PDF Generation using jsPDF
+       ============================================================= */
+    function generatePDF() {
+        if (items.length === 0) {
+            alert('لا توجد بنود لتصديرها.');
+            return;
+        }
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({
+            orientation: 'landscape',
+            unit: 'mm',
+            format: 'a4'
+        });
+
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const inputs = getInputs();
+
+        // Colors
+        const primaryColor = [26, 82, 118];
+        const accentColor = [230, 126, 34];
+        const lightBg = [240, 242, 245];
+        const white = [255, 255, 255];
+        const darkText = [44, 62, 80];
+
+        // ---- Header Bar ----
+        doc.setFillColor(...primaryColor);
+        doc.rect(0, 0, pageWidth, 28, 'F');
+
+        doc.setFontSize(18);
+        doc.setTextColor(...white);
+        doc.text('Aluminum Slats Quotation', pageWidth / 2, 12, { align: 'center' });
+
+        doc.setFontSize(11);
+        doc.text('Price Quote - Aluminum Slats Factory', pageWidth / 2, 20, { align: 'center' });
+
+        // ---- Date and Info Line ----
+        const today = new Date();
+        const dateStr = today.getFullYear() + '-' +
+            String(today.getMonth() + 1).padStart(2, '0') + '-' +
+            String(today.getDate()).padStart(2, '0');
+
+        doc.setFontSize(9);
+        doc.setTextColor(...darkText);
+        doc.text('Date: ' + dateStr, pageWidth - 15, 35, { align: 'right' });
+
+        const taxModeLabel = inputs.taxMode === 'accounting'
+            ? 'Accounting (VAT on Sale)'
+            : 'Industrial (VAT in Cost)';
+        doc.text('Tax Mode: ' + taxModeLabel, 15, 35);
+
+        // ---- Parameters Box ----
+        const paramsY = 40;
+        doc.setFillColor(...lightBg);
+        doc.roundedRect(10, paramsY, pageWidth - 20, 16, 2, 2, 'F');
+
+        doc.setFontSize(8);
+        doc.setTextColor(...darkText);
+
+        const params = [
+            'LME: ' + inputs.lme + ' $/t',
+            'Mfg: ' + inputs.manufacturing + ' $/t',
+            'Paint: ' + inputs.painting + ' OMR/t',
+            'Rate: ' + inputs.exchangeRate + ' OMR/$',
+            'Profit: ' + inputs.profitPercent + '%',
+            'VAT: ' + inputs.vatPercent + '%'
+        ];
+
+        const paramSpacing = (pageWidth - 30) / params.length;
+        params.forEach((p, i) => {
+            doc.text(p, 15 + i * paramSpacing, paramsY + 10);
+        });
+
+        // ---- Table ----
+        const tableTop = paramsY + 22;
+        const cols = [
+            { header: '#', width: 12 },
+            { header: 'Thickness', width: 25 },
+            { header: 'Status', width: 28 },
+            { header: 'Length (m)', width: 28 },
+            { header: 'Cost (OMR)', width: 32 },
+            { header: 'Sell (OMR)', width: 32 },
+            { header: 'Profit (OMR)', width: 32 },
+            { header: 'Price/m (OMR)', width: 35 },
+            { header: 'Price/m2 (OMR)', width: 38 }
+        ];
+
+        const totalTableWidth = cols.reduce((s, c) => s + c.width, 0);
+        const tableStartX = (pageWidth - totalTableWidth) / 2;
+
+        // Table header
+        doc.setFillColor(...primaryColor);
+        let cx = tableStartX;
+        cols.forEach(col => {
+            doc.rect(cx, tableTop, col.width, 10, 'F');
+            cx += col.width;
+        });
+
+        doc.setFontSize(8);
+        doc.setTextColor(...white);
+        cx = tableStartX;
+        cols.forEach(col => {
+            doc.text(col.header, cx + col.width / 2, tableTop + 7, { align: 'center' });
+            cx += col.width;
+        });
+
+        // Table rows
+        let rowY = tableTop + 10;
+        const rowHeight = 8;
+
+        items.forEach((item, idx) => {
+            const isPainted = item.painted === 'painted';
+            const calc = calculateItem(item.thickness, isPainted, item.length, inputs);
+
+            // Check if we need a new page
+            if (rowY + rowHeight > pageHeight - 40) {
+                doc.addPage();
+                rowY = 20;
+            }
+
+            // Alternate row color
+            if (idx % 2 === 0) {
+                doc.setFillColor(...lightBg);
+                doc.rect(tableStartX, rowY, totalTableWidth, rowHeight, 'F');
+            }
+
+            doc.setFontSize(8);
+            doc.setTextColor(...darkText);
+
+            const rowData = [
+                String(idx + 1),
+                item.thickness + ' mm',
+                isPainted ? 'Painted' : 'Unpainted',
+                item.length.toFixed(3),
+                calc.costPiece.toFixed(3),
+                calc.sellPrice.toFixed(3),
+                calc.profit.toFixed(3),
+                calc.pricePerMeter.toFixed(3),
+                calc.pricePerM2.toFixed(3)
+            ];
+
+            cx = tableStartX;
+            cols.forEach((col, ci) => {
+                doc.text(rowData[ci], cx + col.width / 2, rowY + 5.5, { align: 'center' });
+                cx += col.width;
+            });
+
+            rowY += rowHeight;
+        });
+
+        // Table border
+        doc.setDrawColor(200, 200, 200);
+        doc.setLineWidth(0.3);
+        doc.rect(tableStartX, tableTop, totalTableWidth, rowY - tableTop);
+
+        // Vertical lines
+        cx = tableStartX;
+        cols.forEach(col => {
+            doc.line(cx, tableTop, cx, rowY);
+            cx += col.width;
+        });
+        doc.line(cx, tableTop, cx, rowY);
+
+        // Horizontal lines
+        for (let ly = tableTop + 10; ly < rowY; ly += rowHeight) {
+            doc.line(tableStartX, ly, tableStartX + totalTableWidth, ly);
+        }
+
+        // ---- Summary Box ----
+        const summaryY = rowY + 8;
+
+        // Check if summary fits on current page
+        if (summaryY + 30 > pageHeight - 10) {
+            doc.addPage();
+            rowY = 20;
+        }
+
+        const sumStartY = rowY + 8;
+        doc.setFillColor(...primaryColor);
+        doc.roundedRect(tableStartX, sumStartY, totalTableWidth, 24, 2, 2, 'F');
+
+        const totalCost = items.reduce((s, item) => {
+            const calc = calculateItem(item.thickness, item.painted === 'painted', item.length, inputs);
+            return s + calc.costPiece;
+        }, 0);
+
+        const totalSell = items.reduce((s, item) => {
+            const calc = calculateItem(item.thickness, item.painted === 'painted', item.length, inputs);
+            return s + calc.sellPrice;
+        }, 0);
+
+        const totalProfit = items.reduce((s, item) => {
+            const calc = calculateItem(item.thickness, item.painted === 'painted', item.length, inputs);
+            return s + calc.profit;
+        }, 0);
+
+        const avgMeter = items.reduce((s, item) => {
+            const calc = calculateItem(item.thickness, item.painted === 'painted', item.length, inputs);
+            return s + calc.pricePerMeter;
+        }, 0) / items.length;
+
+        const avgM2 = items.reduce((s, item) => {
+            const calc = calculateItem(item.thickness, item.painted === 'painted', item.length, inputs);
+            return s + calc.pricePerM2;
+        }, 0) / items.length;
+
+        doc.setFontSize(9);
+        doc.setTextColor(...white);
+
+        const summaryItems = [
+            'Total Cost: ' + totalCost.toFixed(3) + ' OMR',
+            'Total Sale: ' + totalSell.toFixed(3) + ' OMR',
+            'Total Profit: ' + totalProfit.toFixed(3) + ' OMR',
+            'Avg Price/m: ' + avgMeter.toFixed(3) + ' OMR',
+            'Avg Price/m2: ' + avgM2.toFixed(3) + ' OMR'
+        ];
+
+        const sumSpacing = totalTableWidth / summaryItems.length;
+        summaryItems.forEach((s, i) => {
+            doc.text(s, tableStartX + 5 + i * sumSpacing, sumStartY + 14);
+        });
+
+        // ---- Footer ----
+        doc.setFontSize(7);
+        doc.setTextColor(150, 150, 150);
+        doc.text('Generated by Aluminum Slats Pricing System', pageWidth / 2, pageHeight - 5, { align: 'center' });
+
+        // Save
+        doc.save('quotation_' + dateStr + '.pdf');
+    }
+
+    /* =============================================================
+       Initialize
+       ============================================================= */
+    calcWeight();
+    </script>
+</body>
+</html>
