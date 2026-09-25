@@ -100,64 +100,6 @@ function validateDoorSize(widthCm, heightCm, count) {
     return { w: w / 100, h: h / 100, count: c, area: (w / 100) * (h / 100) };
 }
 
-function packageFits(pkg, area) {
-    return (pkg.min_area == null || area >= pkg.min_area) && (pkg.max_area == null || area <= pkg.max_area);
-}
-
-/**
- * Price one door package for a given size.
- * @param pkg        door_packages row, with .items (door_package_items rows) attached
- * @param products   Map<id, product row>
- * @param region     regions row or null
- * @param optionalIds  array of door_package_items ids to include, or 'all' / 'none'
- */
-function priceDoor({ widthCm, heightCm, count = 1 }, pkg, products, region, settings, optionalIds = 'none') {
-    const size = validateDoorSize(widthCm, heightCm, count);
-    const basisValue = { fixed: 1, width: size.w, height: size.h, area: size.area };
-
-    const item = (product, quantity, extra = {}) => {
-        const unitPrice = unitSellPrice(product, settings);
-        return {
-            product_id: product.id, category: product.category, name: product.name, type: product.type,
-            unit: product.unit, quantity: Math.round(quantity * 1000) / 1000, unit_price: unitPrice,
-            line_total: round2(unitPrice * quantity), ...extra
-        };
-    };
-
-    const slat = products.get(pkg.slat_product_id);
-    if (!slat) throw Object.assign(new Error(`شرائح الباقة ${pkg.name} غير متوفرة`), { status: 400 });
-    const items = [item(slat, size.area * settings.sqm_to_linear * size.count)];
-
-    for (const pi of pkg.items) {
-        const include = !pi.optional || optionalIds === 'all' || (Array.isArray(optionalIds) && optionalIds.includes(pi.id));
-        const product = products.get(pi.product_id);
-        if (!include || !product) continue;
-        items.push(item(product, pi.factor * basisValue[pi.basis] * size.count, pi.optional ? { optional: true } : {}));
-    }
-
-    let feesPending = false;
-    if (region) {
-        const service = (name, qty, price) => ({
-            product_id: null, category: 'service', name, type: region.name, unit: 'service',
-            quantity: qty, unit_price: round2(price), line_total: round2(price * qty)
-        });
-        if (region.installation_fee == null || region.delivery_fee == null) feesPending = true;
-        if (region.installation_fee > 0) items.push(service('تركيب', size.count, region.installation_fee));
-        if (region.delivery_fee > 0) items.push(service('توصيل', 1, region.delivery_fee));
-    }
-
-    return {
-        ...withTotals(items, settings),
-        door: {
-            width_cm: Number(widthCm), height_cm: Number(heightCm), count: size.count,
-            area_m2: round2(size.area), package_id: pkg.id, package_name: pkg.name, door_type: pkg.door_type,
-            region: region ? region.name : null
-        },
-        fees_pending: feesPending || !region
-    };
-}
-
 module.exports = {
-    round2, slatCostPerMeter, unitCost, unitSellPrice, priceQuote, withTotals,
-    priceDoor, packageFits, validateDoorSize, BASIS_LABELS
+    round2, slatCostPerMeter, unitCost, unitSellPrice, priceQuote, withTotals, validateDoorSize, BASIS_LABELS
 };

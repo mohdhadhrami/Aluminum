@@ -167,6 +167,7 @@ function createApp(db) {
             currency: 'OMR',
             vat_percent: settings.vat_percent,
             sqm_to_linear: settings.sqm_to_linear,
+            locations: doors.locations(db),
             // Never expose purchase prices, costs or margins publicly
             products: products.map((p) => ({
                 id: p.id, category: p.category, name: p.name, type: p.type, unit: p.unit,
@@ -176,21 +177,19 @@ function createApp(db) {
         });
     });
 
-    app.post('/api/public/quotes', rateLimit({ windowMs: 10 * 60_000, max: 10 }), asyncRoute(async (req, res) => {
-        const { customer_name, customer_phone, customer_city, notes, items } = req.body || {};
-        if (!customer_name || !String(customer_name).trim()) throw httpError(400, 'الاسم مطلوب');
-        const phone = whatsapp.normalizePhone(customer_phone);
-        if (phone.length < 8 || phone.length > 15) throw httpError(400, 'رقم الهاتف غير صالح');
+    /* Name, mobile and an enabled wilayah are required on every customer request */
+    const readCustomer = (body) => {
+        if (!body.customer_name || !String(body.customer_name).trim()) throw httpError(400, 'الاسم مطلوب');
+        const phone = whatsapp.normalizePhone(body.customer_phone);
+        if (phone.length < 8 || phone.length > 15) throw httpError(400, 'رقم الجوال غير صالح');
+        const region = doors.getRegion(db, body.region_id);
+        if (!region) throw httpError(400, 'اختر المحافظة والولاية');
+        return { customer_name: body.customer_name, customer_phone: phone, region, customer_city: `${region.name}، ${region.governorate}`, notes: body.notes };
+    };
 
+    const quoteResponse = (res, quote) => {
         const settings = getSettings(db);
-        const rows = db.prepare('SELECT * FROM products WHERE active = 1 AND is_public = 1').all();
-        const priced = priceQuote(items, new Map(rows.map((p) => [p.id, p])), settings);
-
-        const quote = saveQuote(db, {
-            customer_name, customer_phone: phone, customer_city, notes, source: 'web', priced
-        });
         whatsapp.notifyQuote(db, quote).catch((err) => console.error('[whatsapp]', err.message));
-
         const waText = encodeURIComponent(`مرحباً، أرغب بمتابعة عرض السعر رقم ${quote.ref}`);
         const { access_key, ...publicQuote } = quote;
         res.status(201).json({
@@ -199,7 +198,58 @@ function createApp(db) {
                 ? `https://wa.me/${whatsapp.normalizePhone(settings.company_whatsapp)}?text=${waText}`
                 : null
         });
-    }));
+    };
+
+    const quoteLimit = rateLimit({ windowMs: 10 * 60_000, max: 10 });
+
+    /* Materials order (slats / accessories by quantity) */
+    app.post('/api/public/quotes', quoteLimit, (req, res) => {
+        const body = req.body || {};
+        const customer = readCustomer(body);
+        const rows = db.prepare('SELECT * FROM products WHERE active = 1 AND is_public = 1').all();
+        const priced = priceQuote(body.items, new Map(rows.map((p) => [p.id, p])), getSettings(db));
+        quoteResponse(res, saveQuote(db, { ...customer, source: 'web', priced }));
+    });
+
+    /* ---- Roller-shutter door configurator ---- */
+
+    app.get('/api/public/configurator', (req, res) => {
+        const settings = getSettings(db);
+        res.json({
+            company_name: settings.company_name,
+            company_whatsapp: settings.company_whatsapp,
+            vat_percent: settings.vat_percent,
+            locations: doors.locations(db),
+            ...doors.publicCatalog(db)
+        });
+    });
+
+    const readDoor = (b) => ({
+        widthCm: b.width_cm, heightCm: b.height_cm, count: Number(b.count) || 1,
+        shutterTypeId: b.shutter_type_id, variantId: b.variant_id, colorId: b.color_id,
+        optionIds: Array.isArray(b.option_ids) ? b.option_ids : [], regionId: b.region_id
+    });
+
+    const publicPrice = (p) => ({
+        items: p.items.map(({ product_id, category, ...i }) => i),
+        subtotal: p.subtotal, vat_percent: p.vat_percent, vat: p.vat, total: p.total,
+        spec: p.spec, delivery_installation: p.delivery_installation
+    });
+
+    /* Live price while the customer is choosing (same code that prices the saved quote) */
+    app.post('/api/public/door-price', (req, res) => {
+        res.json(publicPrice(doors.finalPrice(db, readDoor(req.body || {}))));
+    });
+
+    app.post('/api/public/door-quotes', quoteLimit, (req, res) => {
+        const body = req.body || {};
+        const customer = readCustomer(body);
+        const priced = doors.finalPrice(db, { ...readDoor(body), regionId: customer.region.id });
+        quoteResponse(res, saveQuote(db, {
+            ...customer, source: 'web', priced,
+            details: { ...priced.door, spec: priced.spec, fees_note: priced.delivery_installation }
+        }));
+    });
 
     /* Customer-facing PDF: the random key in the link is the access control */
     app.get('/quotes/:ref.pdf', (req, res) => {
@@ -346,75 +396,171 @@ function createApp(db) {
         sendPdf(res, parseQuote(row), getSettings(db));
     });
 
-    /* ---- Door packages (used by the AI agent) ---- */
+    /* ---- Door configurator: shutter types, accessory classes, locations ---- */
 
-    admin.get('/door-packages', (req, res) => res.json(doors.describePackages(db)));
+    admin.get('/configurator', (req, res) => {
+        const catalog = doors.loadCatalog(db, { includeInactive: true });
+        res.json({ shutter_types: catalog.types, accessory_groups: catalog.groups });
+    });
 
-    const parsePackage = (b) => {
-        if (!b.door_type || !String(b.door_type).trim()) throw httpError(400, 'نوع الباب مطلوب');
-        if (!b.name || !String(b.name).trim()) throw httpError(400, 'اسم الباقة مطلوب');
-        const slat = getProduct(b.slat_product_id);
-        if (!slat || slat.category !== 'slat') throw httpError(400, 'اختر منتج شرائح للباقة');
-        const area = (v) => (v === '' || v == null ? null : Number(v));
-        const items = (Array.isArray(b.items) ? b.items : []).map((i) => {
-            if (!getProduct(i.product_id)) throw httpError(400, 'منتج غير موجود في مكونات الباقة');
-            if (!['fixed', 'width', 'height', 'area'].includes(i.basis)) throw httpError(400, 'طريقة حساب الكمية غير صالحة');
-            const factor = Number(i.factor);
-            if (!Number.isFinite(factor) || factor <= 0) throw httpError(400, 'المعامل يجب أن يكون أكبر من صفر');
-            return { product_id: Number(i.product_id), basis: i.basis, factor, optional: i.optional ? 1 : 0 };
+    /* All-or-nothing writes for a parent row and its children */
+    const tx = (fn) => {
+        db.exec('BEGIN');
+        try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; }
+    };
+
+    const text = (v, max = 2000) => (v == null || String(v).trim() === '' ? null : String(v).trim().slice(0, max));
+    const requireProduct = (id) => {
+        if (!getProduct(id)) throw httpError(400, 'منتج غير موجود');
+        return Number(id);
+    };
+
+    /* Insert/update child rows by id and delete the ones no longer listed (keeps ids stable) */
+    const syncChildren = (table, parentCol, parentId, rows, cols) => {
+        const keep = rows.filter((r) => r.id).map((r) => Number(r.id));
+        const existing = db.prepare(`SELECT id FROM ${table} WHERE ${parentCol} = ?`).all(parentId).map((r) => r.id);
+        for (const id of existing) if (!keep.includes(id)) db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
+        rows.forEach((r, i) => {
+            const values = cols.map((c) => r[c]);
+            if (r.id && existing.includes(Number(r.id))) {
+                db.prepare(`UPDATE ${table} SET ${cols.map((c) => `${c} = ?`).join(', ')}, sort_order = ? WHERE id = ?`)
+                    .run(...values, i, Number(r.id));
+            } else {
+                db.prepare(`INSERT INTO ${table} (${parentCol}, ${cols.join(', ')}, sort_order) VALUES (?, ${cols.map(() => '?').join(', ')}, ?)`)
+                    .run(parentId, ...values, i);
+            }
+        });
+    };
+
+    const parseShutterType = (b) => {
+        if (!text(b.name)) throw httpError(400, 'اسم نوع البوابة مطلوب');
+        const variants = (b.variants || []).map((v) => {
+            if (!text(v.label)) throw httpError(400, 'اكتب اسم السماكة / النوع لكل شريحة');
+            const product = getProduct(v.product_id);
+            if (!product || product.category !== 'slat') throw httpError(400, 'اختر منتج شرائح لكل سماكة');
+            return { id: v.id, label: text(v.label, 80), product_id: product.id };
+        });
+        if (!variants.length) throw httpError(400, 'أضف سماكة واحدة على الأقل');
+        const colors = (b.colors || []).map((c) => {
+            if (!text(c.name)) throw httpError(400, 'اكتب اسم اللون');
+            const surcharge = Number(c.surcharge_per_m2) || 0;
+            if (surcharge < 0) throw httpError(400, 'إضافة اللون لا يمكن أن تكون سالبة');
+            return { id: c.id, name: text(c.name, 40), hex: /^#[0-9a-f]{6}$/i.test(c.hex || '') ? c.hex : null, surcharge_per_m2: surcharge };
         });
         return {
-            door_type: String(b.door_type).trim(), name: String(b.name).trim(), description: b.description || null,
-            slat_product_id: slat.id, min_area: area(b.min_area), max_area: area(b.max_area),
-            sort_order: Number(b.sort_order) || 0, active: b.active === false ? 0 : 1, items
+            name: text(b.name, 80), description: text(b.description), image_url: text(b.image_url, 500),
+            sort_order: Number(b.sort_order) || 0, active: b.active === false ? 0 : 1, variants, colors
         };
     };
 
-    const writePackageItems = (packageId, items) => {
-        db.prepare('DELETE FROM door_package_items WHERE package_id = ?').run(packageId);
-        const insert = db.prepare(`INSERT INTO door_package_items (package_id, product_id, basis, factor, optional)
-                                   VALUES (?, ?, ?, ?, ?)`);
-        for (const i of items) insert.run(packageId, i.product_id, i.basis, i.factor, i.optional);
+    const saveShutterType = (id, t) => {
+        syncChildren('shutter_variants', 'shutter_type_id', id, t.variants, ['label', 'product_id']);
+        syncChildren('shutter_colors', 'shutter_type_id', id, t.colors, ['name', 'hex', 'surcharge_per_m2']);
     };
 
-    admin.post('/door-packages', (req, res) => {
-        const p = parsePackage(req.body || {});
-        const id = Number(db.prepare(`INSERT INTO door_packages (door_type, name, description, slat_product_id, min_area, max_area, sort_order, active)
-                                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-            .run(p.door_type, p.name, p.description, p.slat_product_id, p.min_area, p.max_area, p.sort_order, p.active).lastInsertRowid);
-        writePackageItems(id, p.items);
-        res.status(201).json(doors.describePackages(db).find((x) => x.id === id));
+    admin.post('/shutter-types', (req, res) => {
+        const t = parseShutterType(req.body || {});
+        const id = tx(() => {
+            const newId = Number(db.prepare('INSERT INTO shutter_types (name, description, image_url, sort_order, active) VALUES (?, ?, ?, ?, ?)')
+                .run(t.name, t.description, t.image_url, t.sort_order, t.active).lastInsertRowid);
+            saveShutterType(newId, t);
+            return newId;
+        });
+        res.status(201).json({ id });
     });
 
-    admin.put('/door-packages/:id', (req, res) => {
+    admin.put('/shutter-types/:id', (req, res) => {
         const id = Number(req.params.id);
-        if (!db.prepare('SELECT id FROM door_packages WHERE id = ?').get(id)) throw httpError(404, 'الباقة غير موجودة');
-        const p = parsePackage(req.body || {});
-        db.prepare(`UPDATE door_packages SET door_type = ?, name = ?, description = ?, slat_product_id = ?, min_area = ?,
-                    max_area = ?, sort_order = ?, active = ? WHERE id = ?`)
-            .run(p.door_type, p.name, p.description, p.slat_product_id, p.min_area, p.max_area, p.sort_order, p.active, id);
-        writePackageItems(id, p.items);
-        res.json(doors.describePackages(db).find((x) => x.id === id));
+        const t = parseShutterType(req.body || {});
+        tx(() => {
+            const info = db.prepare('UPDATE shutter_types SET name = ?, description = ?, image_url = ?, sort_order = ?, active = ? WHERE id = ?')
+                .run(t.name, t.description, t.image_url, t.sort_order, t.active, id);
+            if (!info.changes) throw httpError(404, 'نوع البوابة غير موجود');
+            saveShutterType(id, t);
+        });
+        res.json({ id });
     });
 
-    admin.delete('/door-packages/:id', (req, res) => {
-        db.prepare('DELETE FROM door_packages WHERE id = ?').run(Number(req.params.id));
+    admin.delete('/shutter-types/:id', (req, res) => {
+        db.prepare('DELETE FROM shutter_types WHERE id = ?').run(Number(req.params.id));
         res.status(204).end();
     });
 
-    /* Try a size against all packages — the same numbers the agent will quote */
-    admin.get('/door-packages/preview', (req, res) => {
+    const parseGroup = (b) => {
+        if (!text(b.name)) throw httpError(400, 'اسم مجموعة الإكسسوارات مطلوب');
+        if (!['fixed', 'width', 'height', 'area'].includes(b.basis)) throw httpError(400, 'طريقة حساب الكمية غير صالحة');
+        const factor = Number(b.factor);
+        if (!(factor > 0)) throw httpError(400, 'المعامل يجب أن يكون أكبر من صفر');
+        const options = (b.options || []).map((o) => {
+            if (!text(o.label)) throw httpError(400, 'اكتب اسم كل فئة (مثل Class A)');
+            return {
+                id: o.id, label: text(o.label, 60), product_id: requireProduct(o.product_id), details: text(o.details),
+                image_url: text(o.image_url, 500), active: o.active === false ? 0 : 1
+            };
+        });
+        return {
+            name: text(b.name, 80), description: text(b.description), basis: b.basis, factor,
+            allow_none: b.allow_none ? 1 : 0, none_label: text(b.none_label, 60),
+            sort_order: Number(b.sort_order) || 0, active: b.active === false ? 0 : 1, options
+        };
+    };
+
+    const groupCols = ['name', 'description', 'basis', 'factor', 'allow_none', 'none_label', 'sort_order', 'active'];
+
+    admin.post('/accessory-groups', (req, res) => {
+        const g = parseGroup(req.body || {});
+        const id = tx(() => {
+            const newId = Number(db.prepare(`INSERT INTO accessory_groups (${groupCols.join(', ')}) VALUES (${groupCols.map(() => '?').join(', ')})`)
+                .run(...groupCols.map((c) => g[c])).lastInsertRowid);
+            syncChildren('accessory_options', 'group_id', newId, g.options, ['label', 'product_id', 'details', 'image_url', 'active']);
+            return newId;
+        });
+        res.status(201).json({ id });
+    });
+
+    admin.put('/accessory-groups/:id', (req, res) => {
+        const id = Number(req.params.id);
+        const g = parseGroup(req.body || {});
+        tx(() => {
+            const info = db.prepare(`UPDATE accessory_groups SET ${groupCols.map((c) => `${c} = ?`).join(', ')} WHERE id = ?`)
+                .run(...groupCols.map((c) => g[c]), id);
+            if (!info.changes) throw httpError(404, 'المجموعة غير موجودة');
+            syncChildren('accessory_options', 'group_id', id, g.options, ['label', 'product_id', 'details', 'image_url', 'active']);
+        });
+        res.json({ id });
+    });
+
+    admin.delete('/accessory-groups/:id', (req, res) => {
+        db.prepare('DELETE FROM accessory_groups WHERE id = ?').run(Number(req.params.id));
+        res.status(204).end();
+    });
+
+    /* Try a size — the same numbers the customer page and the AI agent will show */
+    admin.get('/configurator/preview', (req, res) => {
         const q = { widthCm: req.query.width_cm, heightCm: req.query.height_cm, count: Number(req.query.count) || 1,
-            doorType: req.query.door_type || '', regionId: req.query.region_id || null };
-        res.json({ range: doors.priceRange(db, q), packages: doors.comparePackages(db, q) });
+            shutterTypeId: req.query.shutter_type_id || null, regionId: req.query.region_id || null };
+        res.json({
+            range: doors.priceRange(db, q),
+            compare: q.shutterTypeId ? doors.compareOptions(db, q) : null
+        });
+    });
+
+    admin.get('/governorates', (req, res) => res.json(db.prepare('SELECT * FROM governorates ORDER BY sort_order, name').all()));
+
+    admin.put('/governorates/:id', (req, res) => {
+        const info = db.prepare('UPDATE governorates SET active = ? WHERE id = ?').run(req.body.active ? 1 : 0, Number(req.params.id));
+        if (!info.changes) throw httpError(404, 'المحافظة غير موجودة');
+        res.json(db.prepare('SELECT * FROM governorates WHERE id = ?').get(Number(req.params.id)));
     });
 
     admin.get('/regions', (req, res) => res.json(db.prepare('SELECT * FROM regions ORDER BY governorate, name').all()));
 
     admin.post('/regions', (req, res) => {
         const name = String((req.body || {}).name || '').trim();
-        if (!name) throw httpError(400, 'اسم الولاية مطلوب');
-        const info = db.prepare('INSERT INTO regions (name, governorate) VALUES (?, ?)').run(name, req.body.governorate || null);
+        const governorate = String(req.body.governorate || '').trim();
+        if (!name || !governorate) throw httpError(400, 'اسم الولاية والمحافظة مطلوبان');
+        db.prepare('INSERT OR IGNORE INTO governorates (name, sort_order) VALUES (?, 99)').run(governorate);
+        const info = db.prepare('INSERT INTO regions (name, governorate) VALUES (?, ?)').run(name, governorate);
         res.status(201).json(db.prepare('SELECT * FROM regions WHERE id = ?').get(info.lastInsertRowid));
     });
 

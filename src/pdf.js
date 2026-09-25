@@ -15,14 +15,27 @@ const ARABIC = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
 const STRONG_LTR = /[A-Za-z0-9À-ɏ]/;
 const MIRROR = { '(': ')', ')': '(', '[': ']', ']': '[', '<': '>', '>': '<', '{': '}', '}': '{' };
 
-/* Split text into pieces: Arabic words, spaces, and non-Arabic runs */
+/* Split text into pieces: Arabic words, spaces, and non-Arabic runs. Punctuation at
+   either end of a Latin/number run ("(Channels):") is split off so it can follow the
+   Arabic direction, as a browser would. */
+const ARABIC_RANGE = '؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿';
+const PIECE = new RegExp(`[${ARABIC_RANGE}]+|\\s+|[^\\s${ARABIC_RANGE}]+`, 'g');
+const EDGES = /^([^A-Za-z0-9À-ɏ]*)(.*?)([^A-Za-z0-9À-ɏ%]*)$/;
+
 function tokenize(text) {
-    return String(text ?? '').match(/[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]+|\s+|[^\s؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]+/g) || [];
+    const out = [];
+    for (const t of String(text ?? '').match(PIECE) || []) {
+        const m = !ARABIC.test(t) && STRONG_LTR.test(t) && t.match(EDGES);
+        if (!m) { out.push(t); continue; }
+        out.push(...m[1], m[2], ...m[3]);
+    }
+    return out;
 }
 
 /* Minimal bidi for a right-to-left paragraph: returns pieces in visual (left→right) order */
 function visualOrder(tokens) {
-    const dirs = tokens.map((t) => (ARABIC.test(t) ? 'R' : STRONG_LTR.test(t) ? 'L' : 'N'));
+    // The spaced dash we use between parts ("النوع — 1.5 ملم") always separates, never joins, LTR runs
+    const dirs = tokens.map((t) => (ARABIC.test(t) || t === '—' ? 'R' : STRONG_LTR.test(t) ? 'L' : 'N'));
     // A neutral between two LTR pieces joins them; any other neutral follows the paragraph (RTL)
     const resolved = dirs.map((d, i) => {
         if (d !== 'N') return d;
@@ -67,10 +80,15 @@ class RtlWriter {
     }
 
     /* Draw one line. x/width define the box; align: right | left | center */
-    line(text, x, y, width, { size = 10, bold = false, color = COLORS.text, align = 'right' } = {}) {
+    line(text, x, y, width, { size = 10, bold = false, color = COLORS.text, align = 'right', fit = false } = {}) {
         const f = this.fonts(bold);
         const doc = this.doc;
         const pieces = visualOrder(tokenize(text));
+        // fit: shrink the font (down to 70%) rather than overflow the box
+        if (fit) {
+            const natural = this.width(text, { size, bold });
+            if (natural > width) size = Math.max(size * 0.7, size * width / natural);
+        }
         doc.fontSize(size).fillColor(color);
         const widths = pieces.map((p) => doc.font(p.arabic ? f.ar : f.lat).widthOfString(p.text));
         const total = widths.reduce((a, b) => a + b, 0);
@@ -134,20 +152,32 @@ function renderQuotePdf(quote, settings, out) {
     const details = quote.details || {};
     const infoRows = [
         ['العميل', quote.customer_name],
-        ['الهاتف', quote.customer_phone],
-        ['الولاية / المدينة', quote.customer_city || details.region || '—']
+        ['الجوال', quote.customer_phone],
+        ['الموقع', quote.customer_city || details.region || '—']
     ];
-    if (details.width_cm) {
-        infoRows.push(['المقاس', `العرض ${details.width_cm} سم — الارتفاع ${details.height_cm} سم — عدد الأبواب ${details.count}`]);
-        infoRows.push(['النوع', `${details.door_type} — ${details.package_name}`]);
+    // Door configuration: spec pairs (current quotes) or the older size/package fields
+    const spec = Array.isArray(details.spec) ? details.spec.slice() : [];
+    if (!spec.length && details.width_cm) {
+        spec.push(['المقاس', `العرض ${details.width_cm} سم — الارتفاع ${details.height_cm} سم — عدد الأبواب ${details.count}`]);
+        if (details.package_name) spec.push(['النوع', `${details.door_type} — ${details.package_name}`]);
     }
-    const boxH = infoRows.length * 20 + 16;
+
+    // Right column: customer; left column: door details (two columns keep the box short)
+    const colW = (width - 20) / 2;
+    const rows = Math.max(infoRows.length, spec.length);
+    const boxH = rows * 20 + 16;
     doc.roundedRect(left, y, width, boxH, 6).fill(COLORS.band);
-    infoRows.forEach(([label, value], i) => {
-        const rowY = y + 10 + i * 20;
-        w.line(label + ':', right - 110, rowY, 100, { size: 10, bold: true });
-        w.line(value, left + 10, rowY, width - 130, { size: 10 });
-    });
+    const drawColumn = (list, x) => {
+        // Label column as wide as its longest label (at most 55% of the column)
+        const labelW = Math.min(colW * 0.55, Math.max(60, ...list.map(([l]) => w.width(l + ':', { size: 9.5, bold: true }))) + 8);
+        list.forEach(([label, value], i) => {
+            const rowY = y + 10 + i * 20;
+            w.line(label + ':', x + colW - labelW, rowY, labelW, { size: 9.5, bold: true });
+            w.line(value, x + 6, rowY, colW - labelW - 12, { size: 9.5, fit: true });
+        });
+    };
+    drawColumn(infoRows, right - colW);
+    if (spec.length) drawColumn(spec, left);
     y += boxH + 18;
 
     // ---- Items table (columns listed right → left) ----

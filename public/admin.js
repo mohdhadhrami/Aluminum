@@ -457,149 +457,299 @@ async function previewPriceList() {
     box.hidden = false;
 }
 
-/* -------------------------- Door packages -------------------------- */
+/* ------------------------ Door configurator ------------------------ */
 
-let doorPackages = [];
+let configurator = { shutter_types: [], accessory_groups: [] };
 let regions = [];
+let governorates = [];
+
+const productOptions = (filter, selected) => products.filter(filter)
+    .map((p) => `<option value="${p.id}" ${p.id === selected ? 'selected' : ''}>${esc(p.name)}${p.type ? ' — ' + esc(p.type) : ''} (${p.unit_price.toFixed(2)} ر.ع/${esc(UNIT_NAMES[p.unit] || p.unit)})</option>`)
+    .join('');
 
 async function loadDoors() {
-    [doorPackages, regions] = await Promise.all([api('GET', '/api/admin/door-packages'), api('GET', '/api/admin/regions')]);
-    const types = [...new Set(doorPackages.map((p) => p.door_type))];
-    $id('doorTypesList').innerHTML = types.map((t) => `<option value="${esc(t)}">`).join('');
-    $id('pvType').innerHTML = '<option value="">كل الأنواع</option>' + types.map((t) => `<option>${esc(t)}</option>`).join('');
+    [configurator, regions, governorates] = await Promise.all([
+        api('GET', '/api/admin/configurator'), api('GET', '/api/admin/regions'), api('GET', '/api/admin/governorates')
+    ]);
+    $id('pvType').innerHTML = '<option value="">كل الأنواع</option>' +
+        configurator.shutter_types.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+    const activeGov = governorates.filter((g) => g.active).map((g) => g.name);
     $id('pvRegion').innerHTML = '<option value="">— بدون —</option>' +
-        regions.filter((r) => r.active).map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join('');
-    $id('pkgSlat').innerHTML = products.filter((p) => p.category === 'slat')
-        .map((p) => `<option value="${p.id}">${esc(p.name)} — ${esc(p.type || '')}</option>`).join('');
-    renderPackages();
+        regions.filter((r) => r.active && activeGov.includes(r.governorate)).map((r) => `<option value="${r.id}">${esc(r.name)} — ${esc(r.governorate)}</option>`).join('');
+    const govOptions = governorates.map((g) => `<option value="${esc(g.name)}">${esc(g.name)}</option>`).join('');
+    const keep = $id('regionGovFilter').value;
+    $id('regionGovFilter').innerHTML = '<option value="">كل المحافظات</option>' + govOptions;
+    $id('regionGovFilter').value = keep;
+    $id('newRegionGov').innerHTML = govOptions;
+    renderTypes();
+    renderGroups();
+    renderGovernorates();
     renderRegions();
-    if (!$id('pkgItemsBody').children.length) resetPackageForm();
+    if (!$id('variantRows').children.length && !$id('typeId').value) resetTypeForm();
+    if (!$id('optionRows').children.length && !$id('groupId').value) resetGroupForm();
 }
 
-function renderPackages() {
-    $id('packagesList').innerHTML = doorPackages.map((p) => `
-        <div class="pkg-card" style="${p.active ? '' : 'opacity:0.55'}">
-            <span class="badge lme">${esc(p.door_type)}</span>
-            <h4>${esc(p.name)}</h4>
-            <div class="status-text">${esc(p.description || '')}${p.max_area ? ` — حتى ${p.max_area} م²` : ''}${p.min_area ? ` — من ${p.min_area} م²` : ''}</div>
-            <ul>${p.items.map((i) => `<li>${esc(i.product_name)} — ${i.factor} ${BASIS_NAMES[i.basis]}${i.optional ? ' <span class="badge">اختياري</span>' : ''}</li>`).join('')}</ul>
-            <button class="btn btn-outline btn-sm" onclick="editPackage(${p.id})">تعديل</button>
-            <button class="btn btn-danger btn-sm" onclick="deletePackage(${p.id})">حذف</button>
-        </div>`).join('') || '<div class="empty-message">لا توجد باقات.</div>';
+/* ---- Shutter types ---- */
+
+function renderTypes() {
+    $id('typesList').innerHTML = configurator.shutter_types.map((t) => `
+        <div class="pkg-card" style="${t.active ? '' : 'opacity:0.55'}">
+            <h4>${esc(t.name)}</h4>
+            <div class="status-text">${esc(t.description || '')}</div>
+            <ul>
+                <li>السماكات: ${t.variants.map((v) => esc(v.label)).join('، ') || '<span style="color:var(--danger)">لا يوجد — لن يظهر للعميل</span>'}</li>
+                <li>الألوان: ${t.colors.map((c) => `<span class="swatch-dot" style="background:${esc(c.hex || '#ccc')}"></span> ${esc(c.name)}`).join('، ') || 'بدون اختيار لون'}</li>
+            </ul>
+            <button class="btn btn-outline btn-sm" onclick="editType(${t.id})">تعديل</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteType(${t.id})">حذف</button>
+        </div>`).join('') || '<div class="empty-message">لا توجد أنواع.</div>';
 }
 
-function addPkgItemRow(item = { product_id: '', basis: 'fixed', factor: 1, optional: 0 }) {
+function addVariantRow(v = {}) {
     const tr = document.createElement('tr');
-    tr.className = 'pkg-items';
-    const options = products.filter((p) => p.category !== 'slat')
-        .map((p) => `<option value="${p.id}" ${p.id === item.product_id ? 'selected' : ''}>${esc(CATEGORY_NAMES[p.category])} — ${esc(p.name)}${p.type ? ' — ' + esc(p.type) : ''}</option>`).join('');
+    tr.dataset.id = v.id || '';
     tr.innerHTML = `
-        <td><select class="pi-product">${options}</select></td>
-        <td><select class="pi-basis">${Object.entries(BASIS_NAMES).map(([k, v]) => `<option value="${k}" ${k === item.basis ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
-        <td><input class="pi-factor" type="number" step="0.01" min="0.01" value="${item.factor}" style="width:80px"></td>
-        <td><input class="pi-optional" type="checkbox" ${item.optional ? 'checked' : ''}></td>
+        <td><input class="row-input v-label" value="${esc(v.label || '')}"></td>
+        <td><select class="row-input v-product">${productOptions((p) => p.category === 'slat', v.product_id)}</select></td>
         <td><button class="btn btn-danger btn-sm" onclick="this.closest('tr').remove()">✕</button></td>`;
-    $id('pkgItemsBody').appendChild(tr);
+    $id('variantRows').appendChild(tr);
 }
 
-function resetPackageForm() {
-    $id('pkgId').value = '';
-    $id('pkgFormTitle').textContent = 'إضافة باقة باب';
-    for (const id of ['pkgType', 'pkgName', 'pkgMin', 'pkgMax', 'pkgDesc']) $id(id).value = '';
-    $id('pkgSort').value = 0;
-    $id('pkgActive').checked = true;
-    $id('pkgItemsBody').innerHTML = '';
-    setStatus('pkgStatus', '');
+function addColorRow(c = {}) {
+    const tr = document.createElement('tr');
+    tr.dataset.id = c.id || '';
+    tr.innerHTML = `
+        <td><input class="row-input c-name" value="${esc(c.name || '')}"></td>
+        <td><input type="color" class="c-hex" value="${esc(c.hex || '#cccccc')}"></td>
+        <td><input type="number" class="row-input c-surcharge" min="0" step="0.1" value="${c.surcharge_per_m2 || 0}" style="width:100px"></td>
+        <td><button class="btn btn-danger btn-sm" onclick="this.closest('tr').remove()">✕</button></td>`;
+    $id('colorRows').appendChild(tr);
 }
 
-function editPackage(id) {
-    const p = doorPackages.find((x) => x.id === id);
-    if (!p) return;
-    $id('pkgId').value = p.id;
-    $id('pkgFormTitle').textContent = 'تعديل: ' + p.name;
-    $id('pkgType').value = p.door_type;
-    $id('pkgName').value = p.name;
-    $id('pkgSlat').value = p.slat_product_id;
-    $id('pkgMin').value = p.min_area ?? '';
-    $id('pkgMax').value = p.max_area ?? '';
-    $id('pkgSort').value = p.sort_order;
-    $id('pkgDesc').value = p.description || '';
-    $id('pkgActive').checked = !!p.active;
-    $id('pkgItemsBody').innerHTML = '';
-    p.items.forEach(addPkgItemRow);
-    $id('pkgFormTitle').scrollIntoView({ behavior: 'smooth' });
+function resetTypeForm() {
+    $id('typeId').value = '';
+    $id('typeFormTitle').textContent = 'إضافة نوع بوابة';
+    for (const id of ['typeName', 'typeImage', 'typeDesc']) $id(id).value = '';
+    $id('typeSort').value = 0;
+    $id('typeActive').checked = true;
+    $id('variantRows').innerHTML = '';
+    $id('colorRows').innerHTML = '';
+    addVariantRow({ label: 'قياسي' });
+    setStatus('typeStatus', '');
 }
 
-async function savePackage() {
-    const id = $id('pkgId').value;
-    const items = [...document.querySelectorAll('#pkgItemsBody tr')].map((tr) => ({
-        product_id: Number(tr.querySelector('.pi-product').value),
-        basis: tr.querySelector('.pi-basis').value,
-        factor: Number(tr.querySelector('.pi-factor').value),
-        optional: tr.querySelector('.pi-optional').checked
-    }));
+function editType(id) {
+    const t = configurator.shutter_types.find((x) => x.id === id);
+    if (!t) return;
+    $id('typeId').value = t.id;
+    $id('typeFormTitle').textContent = 'تعديل: ' + t.name;
+    $id('typeName').value = t.name;
+    $id('typeImage').value = t.image_url || '';
+    $id('typeDesc').value = t.description || '';
+    $id('typeSort').value = t.sort_order;
+    $id('typeActive').checked = !!t.active;
+    $id('variantRows').innerHTML = '';
+    $id('colorRows').innerHTML = '';
+    t.variants.forEach(addVariantRow);
+    t.colors.forEach(addColorRow);
+    $id('typeFormTitle').scrollIntoView({ behavior: 'smooth' });
+}
+
+async function saveType() {
+    const id = $id('typeId').value;
+    const rows = (sel) => [...document.querySelectorAll(sel + ' tr')];
     try {
-        await api(id ? 'PUT' : 'POST', id ? `/api/admin/door-packages/${id}` : '/api/admin/door-packages', {
-            door_type: $id('pkgType').value, name: $id('pkgName').value, description: $id('pkgDesc').value,
-            slat_product_id: Number($id('pkgSlat').value), min_area: $id('pkgMin').value, max_area: $id('pkgMax').value,
-            sort_order: $id('pkgSort').value, active: $id('pkgActive').checked, items
+        await api(id ? 'PUT' : 'POST', id ? `/api/admin/shutter-types/${id}` : '/api/admin/shutter-types', {
+            name: $id('typeName').value, description: $id('typeDesc').value, image_url: $id('typeImage').value,
+            sort_order: $id('typeSort').value, active: $id('typeActive').checked,
+            variants: rows('#variantRows').map((tr) => ({
+                id: Number(tr.dataset.id) || undefined, label: tr.querySelector('.v-label').value,
+                product_id: Number(tr.querySelector('.v-product').value)
+            })),
+            colors: rows('#colorRows').map((tr) => ({
+                id: Number(tr.dataset.id) || undefined, name: tr.querySelector('.c-name').value,
+                hex: tr.querySelector('.c-hex').value, surcharge_per_m2: tr.querySelector('.c-surcharge').value
+            }))
         });
-        resetPackageForm();
-        setStatus('pkgStatus', 'تم الحفظ ✓', 'ok');
+        resetTypeForm();
+        setStatus('typeStatus', 'تم الحفظ ✓', 'ok');
         await loadDoors();
     } catch (err) {
-        setStatus('pkgStatus', err.message, 'err');
+        setStatus('typeStatus', err.message, 'err');
     }
 }
 
-async function deletePackage(id) {
-    if (!confirm('حذف هذه الباقة؟')) return;
-    await api('DELETE', `/api/admin/door-packages/${id}`);
+async function deleteType(id) {
+    if (!confirm('حذف هذا النوع؟ (لإخفائه فقط عدّله وألغِ «مفعّل»)')) return;
+    await api('DELETE', `/api/admin/shutter-types/${id}`);
     await loadDoors();
 }
+
+/* ---- Accessory groups ---- */
+
+function renderGroups() {
+    $id('groupsList').innerHTML = configurator.accessory_groups.map((g) => `
+        <div class="pkg-card" style="${g.active ? '' : 'opacity:0.55'}">
+            <h4>${esc(g.name)} <span class="badge">${g.factor} ${esc(BASIS_NAMES[g.basis])}</span>${g.allow_none ? ` <span class="badge">${esc(g.none_label || 'يمكن الاستغناء')}</span>` : ''}</h4>
+            <div class="status-text">${esc(g.description || '')}</div>
+            <ul>${g.options.map((o) => {
+                const p = products.find((x) => x.id === o.product_id);
+                return `<li style="${o.active ? '' : 'opacity:0.5'}"><strong>${esc(o.label)}</strong> — ${p ? p.unit_price.toFixed(2) + ' ر.ع/' + esc(UNIT_NAMES[p.unit] || p.unit) : '؟'} — ${esc(o.details || '')}</li>`;
+            }).join('')}</ul>
+            <button class="btn btn-outline btn-sm" onclick="editGroup(${g.id})">تعديل</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteGroup(${g.id})">حذف</button>
+        </div>`).join('') || '<div class="empty-message">لا توجد مجموعات.</div>';
+}
+
+function addOptionRow(o = {}) {
+    const tr = document.createElement('tr');
+    tr.dataset.id = o.id || '';
+    tr.innerHTML = `
+        <td><input class="row-input o-label" value="${esc(o.label || '')}" style="width:110px"></td>
+        <td><select class="row-input o-product">${productOptions((p) => p.category !== 'slat', o.product_id)}</select></td>
+        <td><input class="row-input o-details" value="${esc(o.details || '')}"></td>
+        <td><input class="row-input o-image" value="${esc(o.image_url || '')}" placeholder="https://..." style="width:130px"></td>
+        <td><input type="checkbox" class="o-active" ${o.active === 0 ? '' : 'checked'}></td>
+        <td><button class="btn btn-danger btn-sm" onclick="this.closest('tr').remove()">✕</button></td>`;
+    $id('optionRows').appendChild(tr);
+}
+
+function resetGroupForm() {
+    $id('groupId').value = '';
+    $id('groupFormTitle').textContent = 'إضافة مجموعة إكسسوارات';
+    for (const id of ['groupName', 'groupDesc', 'groupNoneLabel']) $id(id).value = '';
+    $id('groupBasis').value = 'fixed';
+    $id('groupFactor').value = 1;
+    $id('groupSort').value = 0;
+    $id('groupNone').checked = false;
+    $id('groupNoneLabel').disabled = true;
+    $id('groupActive').checked = true;
+    $id('optionRows').innerHTML = '';
+    ['Class A', 'Class B', 'Class C'].forEach((label) => addOptionRow({ label }));
+    setStatus('groupStatus', '');
+}
+
+function editGroup(id) {
+    const g = configurator.accessory_groups.find((x) => x.id === id);
+    if (!g) return;
+    $id('groupId').value = g.id;
+    $id('groupFormTitle').textContent = 'تعديل: ' + g.name;
+    $id('groupName').value = g.name;
+    $id('groupDesc').value = g.description || '';
+    $id('groupBasis').value = g.basis;
+    $id('groupFactor').value = g.factor;
+    $id('groupSort').value = g.sort_order;
+    $id('groupNone').checked = !!g.allow_none;
+    $id('groupNoneLabel').disabled = !g.allow_none;
+    $id('groupNoneLabel').value = g.none_label || '';
+    $id('groupActive').checked = !!g.active;
+    $id('optionRows').innerHTML = '';
+    g.options.forEach(addOptionRow);
+    $id('groupFormTitle').scrollIntoView({ behavior: 'smooth' });
+}
+
+async function saveGroup() {
+    const id = $id('groupId').value;
+    try {
+        await api(id ? 'PUT' : 'POST', id ? `/api/admin/accessory-groups/${id}` : '/api/admin/accessory-groups', {
+            name: $id('groupName').value, description: $id('groupDesc').value, basis: $id('groupBasis').value,
+            factor: $id('groupFactor').value, sort_order: $id('groupSort').value, allow_none: $id('groupNone').checked,
+            none_label: $id('groupNoneLabel').value, active: $id('groupActive').checked,
+            options: [...document.querySelectorAll('#optionRows tr')].map((tr) => ({
+                id: Number(tr.dataset.id) || undefined, label: tr.querySelector('.o-label').value,
+                product_id: Number(tr.querySelector('.o-product').value), details: tr.querySelector('.o-details').value,
+                image_url: tr.querySelector('.o-image').value, active: tr.querySelector('.o-active').checked
+            }))
+        });
+        resetGroupForm();
+        setStatus('groupStatus', 'تم الحفظ ✓', 'ok');
+        await loadDoors();
+    } catch (err) {
+        setStatus('groupStatus', err.message, 'err');
+    }
+}
+
+async function deleteGroup(id) {
+    if (!confirm('حذف هذه المجموعة وفئاتها؟')) return;
+    await api('DELETE', `/api/admin/accessory-groups/${id}`);
+    await loadDoors();
+}
+
+/* ---- Preview ---- */
 
 async function previewDoor() {
     const qs = new URLSearchParams({
         width_cm: $id('pvWidth').value, height_cm: $id('pvHeight').value, count: $id('pvCount').value,
-        door_type: $id('pvType').value, region_id: $id('pvRegion').value
+        shutter_type_id: $id('pvType').value, region_id: $id('pvRegion').value
     });
     try {
-        const { range, packages } = await api('GET', '/api/admin/door-packages/preview?' + qs);
+        const { range, compare } = await api('GET', '/api/admin/configurator/preview?' + qs);
         if (!range.available) { $id('pvResult').innerHTML = `<div class="range-box">${esc(range.message)}</div>`; return; }
+        const byType = range.by_type.map((t) => `<li>${esc(t.shutter_type)}: من ${t.from.toFixed(2)} إلى ${t.to.toFixed(2)} ر.ع</li>`).join('');
+        const details = compare ? `
+            <div class="pkg-card" style="margin-top:10px;">
+                <h4>${esc(compare.shutter_type.name)} — تفاصيل الفروقات (شاملة الضريبة)</h4>
+                <ul>
+                    ${compare.thickness_options.map((v) => `<li>شرائح ${esc(v.label)}: ${v.slats_price_with_vat.toFixed(2)} ر.ع</li>`).join('')}
+                    ${compare.colors.filter((c) => c.adds_with_vat > 0).map((c) => `<li>لون ${esc(c.name)}: +${c.adds_with_vat.toFixed(2)} ر.ع</li>`).join('')}
+                </ul>
+                ${compare.accessories.map((g) => `<strong>${esc(g.group)}</strong><ul>${g.classes.map((c) => `<li>${esc(c.label)}: ${c.price_with_vat.toFixed(2)} ر.ع</li>`).join('')}${g.can_skip ? `<li>${esc(g.skip_label)}: 0.00</li>` : ''}</ul>`).join('')}
+            </div>` : '';
         $id('pvResult').innerHTML = `
             <div class="range-box">النطاق: <strong>من ${range.from.toFixed(2)} إلى ${range.to.toFixed(2)} ر.ع</strong>
-                شامل الضريبة — المساحة ${range.area_m2} م² — ${esc(range.delivery_installation)}</div>
-            ${packages.map((p) => `
-                <div class="pkg-card" style="margin-top:10px;">
-                    <h4>${esc(p.package_name)} — ${p.base_price_with_vat.toFixed(2)} ر.ع</h4>
-                    <div class="status-text">${esc(p.slats)} + ${p.included.map(esc).join('، ')}</div>
-                    ${p.optional_extras.length ? `<ul>${p.optional_extras.map((e) => `<li>${esc(e.name)}: +${e.adds_with_vat.toFixed(2)} ر.ع</li>`).join('')}</ul>` : ''}
-                </div>`).join('')}`;
+                شامل الضريبة — المساحة ${range.area_m2} م² — ${esc(range.delivery_installation)}<ul style="margin-top:6px; padding-inline-start:20px">${byType}</ul></div>${details}`;
     } catch (err) {
         $id('pvResult').innerHTML = `<div class="range-box" style="color:var(--danger)">${esc(err.message)}</div>`;
     }
 }
 
+/* ---- Governorates & wilayat ---- */
+
+function renderGovernorates() {
+    $id('govToggles').innerHTML = governorates.map((g) =>
+        `<label><input type="checkbox" ${g.active ? 'checked' : ''} onchange="toggleGovernorate(${g.id}, this.checked)"> ${esc(g.name)}</label>`).join('');
+}
+
+async function toggleGovernorate(id, active) {
+    try {
+        const g = await api('PUT', `/api/admin/governorates/${id}`, { active });
+        governorates[governorates.findIndex((x) => x.id === id)] = g;
+    } catch (err) {
+        alert(err.message);
+    }
+}
+
 function renderRegions() {
+    const gov = $id('regionGovFilter').value;
     const f = $id('regionFilter').value.trim();
     $id('regionsBody').innerHTML = regions
-        .filter((r) => !f || r.name.includes(f) || (r.governorate || '').includes(f))
+        .filter((r) => (!gov || r.governorate === gov) && (!f || r.name.includes(f)))
         .map((r) => `
         <tr>
             <td>${esc(r.governorate || '')}</td>
             <td>${esc(r.name)}</td>
-            <td><input type="number" min="0" step="0.5" id="rd${r.id}" value="${r.delivery_fee ?? ''}" placeholder="بعد المعاينة" style="width:110px"></td>
             <td><input type="number" min="0" step="0.5" id="ri${r.id}" value="${r.installation_fee ?? ''}" placeholder="بعد المعاينة" style="width:110px"></td>
+            <td><input type="number" min="0" step="0.5" id="rd${r.id}" value="${r.delivery_fee ?? ''}" placeholder="—" style="width:90px"></td>
             <td><button class="btn btn-outline btn-sm" onclick="saveRegion(${r.id}, this)">حفظ</button></td>
         </tr>`).join('');
 }
 
 async function saveRegion(id, btn) {
     try {
-        const r = await api('PUT', `/api/admin/regions/${id}`, { delivery_fee: $id('rd' + id).value, installation_fee: $id('ri' + id).value });
+        const r = await api('PUT', `/api/admin/regions/${id}`, { installation_fee: $id('ri' + id).value, delivery_fee: $id('rd' + id).value });
         regions[regions.findIndex((x) => x.id === id)] = r;
         btn.textContent = '✓';
         setTimeout(() => { btn.textContent = 'حفظ'; }, 1500);
+    } catch (err) {
+        alert(err.message);
+    }
+}
+
+async function addRegion() {
+    try {
+        await api('POST', '/api/admin/regions', { name: $id('newRegionName').value, governorate: $id('newRegionGov').value });
+        $id('newRegionName').value = '';
+        await loadDoors();
     } catch (err) {
         alert(err.message);
     }

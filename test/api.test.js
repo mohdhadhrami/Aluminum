@@ -73,7 +73,7 @@ test('public catalog hides costs and private products; quote is priced on the se
 
     const slat = catalog.body.products[0];
     const quote = await call('POST', '/api/public/quotes', {
-        customer_name: 'أحمد', customer_phone: '99123456',
+        customer_name: 'أحمد', customer_phone: '99123456', region_id: 1,
         items: [{ product_id: slat.id, width: 2, height: 1.5, pieces: 1, unit_price: 0.001 }]
     }, '');
     assert.strictEqual(quote.status, 201);
@@ -84,7 +84,7 @@ test('public catalog hides costs and private products; quote is priced on the se
 
     const hidden = await call('GET', '/api/admin/products?category=machine');
     const bad = await call('POST', '/api/public/quotes', {
-        customer_name: 'x', customer_phone: '99123456', items: [{ product_id: hidden.body[0].id, quantity: 1 }]
+        customer_name: 'x', customer_phone: '99123456', region_id: 1, items: [{ product_id: hidden.body[0].id, quantity: 1 }]
     }, '');
     assert.strictEqual(bad.status, 400);
 
@@ -108,7 +108,7 @@ test('webhook receives signed quote.created event', async (t) => {
     });
     const catalog = await call('GET', '/api/public/catalog', null, '');
     await call('POST', '/api/public/quotes', {
-        customer_name: 'سالم', customer_phone: '96891234567', items: [{ product_id: catalog.body.products[0].id, quantity: 6 }]
+        customer_name: 'سالم', customer_phone: '96891234567', region_id: 1, items: [{ product_id: catalog.body.products[0].id, quantity: 6 }]
     }, '');
 
     for (let i = 0; i < 50 && received.length === 0; i++) await new Promise((r) => setTimeout(r, 20));

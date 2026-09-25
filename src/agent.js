@@ -17,21 +17,22 @@ const isConfigured = () => Boolean(process.env.ANTHROPIC_API_KEY || process.env.
 
 function systemPrompt(settings) {
     return `أنت مساعد المبيعات في ${settings.company_name} في سلطنة عُمان، وتتحدث مع العملاء عبر واتساب.
-الشركة تصنع أبواب الرول شتر (الأبواب الألمنيوم الملفوفة) وتبيع الشرائح والإكسسوارات والمواتير.
+الشركة تركّب بوابات الرول شتر (الأبواب الألمنيوم الملفوفة) بأنواع مختلفة، مع إكسسوارات بفئات مختلفة.
 
-مسار المحادثة لطلب باب رول شتر:
-1. رحّب باختصار وتأكد أن العميل يريد باب رول شتر.
-2. اسأل عن مقاس الفتحة بالسنتيمتر: العرض والارتفاع، وعدد الأبواب إن كان أكثر من باب.
-3. اسأل عن النوع (استخدم list_door_options لمعرفة الأنواع المتاحة، مثل يدوي أو كهربائي) وعن الولاية. استخدم find_region لتحديد الولاية.
-4. استخدم get_price_range وأعطِ العميل نطاق السعر "من ... إلى ..." ريال عماني شاملاً الضريبة، ووضّح ما يخص رسوم التوصيل والتركيب كما يعيدها الأداة.
+مسار المحادثة لطلب بوابة رول شتر:
+1. رحّب باختصار وتأكد أن العميل يريد بوابة رول شتر.
+2. اسأل عن مقاس الفتحة بالسنتيمتر: العرض والارتفاع، وعدد البوابات إن كان أكثر من واحدة.
+3. استخدم list_door_options واسأل العميل عن نوع البوابة (مثل الإيراني أو التركي أو العماني)، واسأله عن الولاية. استخدم find_region لتحديد الولاية؛ إذا ظهرت أكثر من نتيجة فاسأله عن المحافظة.
+4. استخدم get_price_range وأعطِ العميل نطاق السعر "من ... إلى ..." ريال عماني شاملاً الضريبة، ووضّح حالة رسوم التركيب كما تعيدها الأداة.
 5. اسأل العميل: "هل تريد أن أوضح لك الفروقات في الأسعار؟"
-6. إن وافق، استخدم compare_packages واشرح الفروقات بين الباقات ونوعية الإكسسوارات في كل باقة والإضافات الاختيارية وسعر كل إضافة.
-7. بعد أن يختار العميل الباقة والإضافات، استخدم calculate_final_price وأعطه السعر النهائي مع تفصيل مختصر.
+6. إن وافق، استخدم compare_options واشرح: السماكات المتاحة لهذا النوع (إن وُجد أكثر من سماكة) والألوان، ثم الإكسسوارات واحدة تلو الأخرى (المسارات الجانبية، عمود محور الدوران، القواعد، المحرك...) مع فئاتها Class A / B / C وتفاصيل كل فئة وسعرها لهذا المقاس. لا تُغرق العميل بكل شيء في رسالة واحدة إن كانت طويلة.
+7. بعد أن يختار العميل السماكة واللون وفئة كل إكسسوار، استخدم calculate_final_price وأعطه السعر النهائي مع تفصيل مختصر.
 8. اعرض عليه عرض سعر رسمي بصيغة PDF. إن وافق، اسأله عن اسمه ثم استخدم create_quote. سيُرسل الملف له تلقائياً بعد رسالتك.
 
 قواعد مهمة:
 - لا تذكر أي سعر إلا إذا جاء من إحدى الأدوات. لا تقدّر ولا تخمّن الأسعار أبداً.
 - إذا أعطى العميل المقاس بالمتر أو بالملم فحوّله إلى سنتيمتر، وتأكد منه إذا كان غير منطقي.
+- إذا لم يحدد العميل فئة إكسسوار بعد شرحها، فاسأله أو اقترح عليه، ولا تختر عنه بصمت.
 - اسأل سؤالاً أو سؤالين في كل رسالة، ولا تكرر أسئلة أجاب عنها العميل.
 - اكتب بالعربية بأسلوب ودود ومختصر يناسب واتساب. استخدم *نص* للتغميق، ولا تستخدم الجداول أو عناوين Markdown.
 - الأسعار بالريال العماني (ر.ع) بخانتين عشريتين.
@@ -43,19 +44,27 @@ function systemPrompt(settings) {
 const sizeProps = {
     width_cm: { type: 'number', description: 'عرض الفتحة بالسنتيمتر' },
     height_cm: { type: 'number', description: 'ارتفاع الفتحة بالسنتيمتر' },
-    door_count: { type: 'integer', description: 'عدد الأبواب بنفس المقاس (1 إذا لم يذكر العميل)' }
+    door_count: { type: 'integer', description: 'عدد البوابات بنفس المقاس (1 إذا لم يذكر العميل)' }
+};
+
+const choiceProps = {
+    shutter_type_id: { type: 'integer', description: 'رقم نوع البوابة من list_door_options' },
+    variant_id: { type: ['integer', 'null'], description: 'رقم السماكة من compare_options، أو null إذا للنوع سماكة واحدة' },
+    color_id: { type: ['integer', 'null'], description: 'رقم اللون، أو null إذا لم يحدد العميل لوناً' },
+    option_ids: { type: 'array', items: { type: 'integer' }, description: 'رقم الفئة المختارة (option_id) لكل مجموعة إكسسوارات؛ لا تضع شيئاً لمجموعة يمكن تركها (مثل بدون محرك)' },
+    region_id: { type: ['integer', 'null'], description: 'رقم الولاية من find_region، أو null' }
 };
 
 const TOOLS = [
     {
         name: 'list_door_options',
-        description: 'يعرض أنواع أبواب الرول شتر المتاحة (مثل يدوي وكهربائي) والباقات داخل كل نوع. استخدمه قبل سؤال العميل عن النوع.',
+        description: 'يعرض أنواع بوابات الرول شتر المتاحة (مثل الإيراني والتركي والعماني) مع وصف كل نوع، وأسماء مجموعات الإكسسوارات وفئاتها. استخدمه قبل سؤال العميل عن النوع.',
         strict: true,
         input_schema: { type: 'object', properties: {}, required: [], additionalProperties: false }
     },
     {
         name: 'find_region',
-        description: 'يبحث عن الولاية في سلطنة عُمان ويعيد رقمها (region_id). إذا ظهر أكثر من نتيجة فاسأل العميل ليختار.',
+        description: 'يبحث عن الولاية (أو المحافظة) في سلطنة عُمان ويعيد رقمها region_id. إذا ظهر أكثر من نتيجة فاسأل العميل ليختار.',
         strict: true,
         input_schema: {
             type: 'object',
@@ -66,47 +75,38 @@ const TOOLS = [
     },
     {
         name: 'get_price_range',
-        description: 'يحسب نطاق السعر (من - إلى) شاملاً الضريبة لنوع باب ومقاس معين، من أرخص باقة بدون إضافات إلى أغلى باقة مع كل الإضافات.',
+        description: 'يحسب نطاق السعر (من - إلى) شاملاً الضريبة والتركيب لمقاس معين: من أرخص سماكة وفئات إكسسوارات إلى أغلاها. إذا لم يُحدد النوع يعطي النطاق لكل الأنواع.',
         strict: true,
         input_schema: {
             type: 'object',
             properties: {
                 ...sizeProps,
-                door_type: { type: 'string', description: 'نوع الباب كما يظهر في list_door_options' },
-                region_id: { type: ['integer', 'null'], description: 'رقم الولاية من find_region، أو null إذا لم تُحدد' }
+                shutter_type_id: { type: ['integer', 'null'], description: 'رقم نوع البوابة، أو null لكل الأنواع' },
+                region_id: choiceProps.region_id
             },
-            required: ['width_cm', 'height_cm', 'door_count', 'door_type', 'region_id'],
+            required: ['width_cm', 'height_cm', 'door_count', 'shutter_type_id', 'region_id'],
             additionalProperties: false
         }
     },
     {
-        name: 'compare_packages',
-        description: 'يشرح الفروقات بين باقات نوع الباب: الشرائح والإكسسوارات المشمولة، والسعر الأساسي، والإضافات الاختيارية وسعر كل منها.',
+        name: 'compare_options',
+        description: 'يشرح الفروقات لنوع بوابة ومقاس معين: السماكات المتاحة وسعر الشرائح لكل منها، والألوان، ولكل مجموعة إكسسوارات فئاتها (Class A/B/C) مع التفاصيل وسعر كل فئة لهذا المقاس.',
         strict: true,
         input_schema: {
             type: 'object',
-            properties: {
-                ...sizeProps,
-                door_type: { type: 'string' },
-                region_id: { type: ['integer', 'null'] }
-            },
-            required: ['width_cm', 'height_cm', 'door_count', 'door_type', 'region_id'],
+            properties: { ...sizeProps, shutter_type_id: choiceProps.shutter_type_id },
+            required: ['width_cm', 'height_cm', 'door_count', 'shutter_type_id'],
             additionalProperties: false
         }
     },
     {
         name: 'calculate_final_price',
-        description: 'يحسب السعر النهائي المفصّل للباقة التي اختارها العميل مع الإضافات الاختيارية التي يريدها.',
+        description: 'يحسب السعر النهائي المفصّل لاختيارات العميل: النوع والسماكة واللون وفئة كل إكسسوار، مع التركيب حسب الولاية.',
         strict: true,
         input_schema: {
             type: 'object',
-            properties: {
-                ...sizeProps,
-                package_id: { type: 'integer' },
-                optional_item_ids: { type: 'array', items: { type: 'integer' }, description: 'أرقام الإضافات الاختيارية من compare_packages، أو قائمة فارغة' },
-                region_id: { type: ['integer', 'null'] }
-            },
-            required: ['width_cm', 'height_cm', 'door_count', 'package_id', 'optional_item_ids', 'region_id'],
+            properties: { ...sizeProps, ...choiceProps },
+            required: ['width_cm', 'height_cm', 'door_count', ...Object.keys(choiceProps)],
             additionalProperties: false
         }
     },
@@ -118,13 +118,11 @@ const TOOLS = [
             type: 'object',
             properties: {
                 ...sizeProps,
-                package_id: { type: 'integer' },
-                optional_item_ids: { type: 'array', items: { type: 'integer' } },
-                region_id: { type: ['integer', 'null'] },
+                ...choiceProps,
                 customer_name: { type: 'string' },
                 notes: { type: ['string', 'null'], description: 'ملاحظات العميل إن وجدت' }
             },
-            required: ['width_cm', 'height_cm', 'door_count', 'package_id', 'optional_item_ids', 'region_id', 'customer_name', 'notes'],
+            required: ['width_cm', 'height_cm', 'door_count', ...Object.keys(choiceProps), 'customer_name', 'notes'],
             additionalProperties: false
         }
     },
@@ -142,6 +140,10 @@ const TOOLS = [
 ];
 
 const sizeArgs = (i) => ({ widthCm: i.width_cm, heightCm: i.height_cm, count: i.door_count || 1 });
+const choiceArgs = (i) => ({
+    ...sizeArgs(i), shutterTypeId: i.shutter_type_id, variantId: i.variant_id, colorId: i.color_id,
+    optionIds: i.option_ids || [], regionId: i.region_id
+});
 
 /**
  * Run one tool. ctx = { db, phone, channel, createQuote(fn), notifyHuman(fn), events[] }
@@ -151,37 +153,39 @@ async function executeTool(name, input, ctx) {
     const { db } = ctx;
     switch (name) {
         case 'list_door_options': {
-            const { packages } = doors.loadCatalog(db);
-            const types = {};
-            for (const p of packages) {
-                (types[p.door_type] ||= []).push({ package_id: p.id, name: p.name, description: p.description, max_area_m2: p.max_area });
-            }
-            return { door_types: Object.entries(types).map(([door_type, pkgs]) => ({ door_type, packages: pkgs })) };
+            const catalog = doors.publicCatalog(db);
+            return {
+                shutter_types: catalog.shutter_types.map((t) => ({
+                    shutter_type_id: t.id, name: t.name, description: t.description,
+                    thickness_options: t.variants.map((v) => v.label), colors: t.colors.map((c) => c.name)
+                })),
+                accessory_groups: catalog.accessory_groups.map((g) => ({
+                    group: g.name, classes: g.options.map((o) => o.label), can_skip: g.allow_none
+                }))
+            };
         }
         case 'find_region': {
             const matches = doors.findRegions(db, input.query);
             return matches.length
                 ? { matches: matches.map((r) => ({ region_id: r.id, wilayah: r.name, governorate: r.governorate })) }
-                : { matches: [], message: 'لم يتم العثور على الولاية. اسأل العميل عن اسم الولاية بشكل أوضح، أو تابع بدون ولاية.' };
+                : { matches: [], message: 'لم يتم العثور على الولاية. اسأل العميل عن اسم الولاية والمحافظة بشكل أوضح، أو تابع بدون ولاية.' };
         }
         case 'get_price_range':
-            return doors.priceRange(db, { ...sizeArgs(input), doorType: input.door_type, regionId: input.region_id });
-        case 'compare_packages':
-            return { packages: doors.comparePackages(db, { ...sizeArgs(input), doorType: input.door_type, regionId: input.region_id }) };
-        case 'calculate_final_price': {
-            const r = doors.finalPrice(db, { ...sizeArgs(input), packageId: input.package_id, optionalItemIds: input.optional_item_ids, regionId: input.region_id });
-            return summarizePrice(r);
-        }
+            return doors.priceRange(db, { ...sizeArgs(input), shutterTypeId: input.shutter_type_id, regionId: input.region_id });
+        case 'compare_options':
+            return doors.compareOptions(db, { ...sizeArgs(input), shutterTypeId: input.shutter_type_id });
+        case 'calculate_final_price':
+            return summarizePrice(doors.finalPrice(db, choiceArgs(input)));
         case 'create_quote': {
-            const priced = doors.finalPrice(db, { ...sizeArgs(input), packageId: input.package_id, optionalItemIds: input.optional_item_ids, regionId: input.region_id });
+            const priced = doors.finalPrice(db, choiceArgs(input));
             const quote = ctx.createQuote({
                 customer_name: input.customer_name,
                 customer_phone: ctx.phone,
-                customer_city: priced.door.region,
+                customer_city: priced.door.region ? `${priced.door.region}، ${priced.door.governorate}` : null,
                 notes: input.notes,
                 source: ctx.channel,
                 priced,
-                details: { ...priced.door, fees_note: priced.delivery_installation }
+                details: { ...priced.door, spec: priced.spec, fees_note: priced.delivery_installation }
             });
             ctx.events.push({ type: 'quote_created', quote });
             return { ref: quote.ref, total: quote.total, pdf: 'سيتم إرسال ملف PDF للعميل تلقائياً بعد رسالتك' };
@@ -198,13 +202,13 @@ async function executeTool(name, input, ctx) {
 
 function summarizePrice(r) {
     return {
-        door: r.door,
+        choices: r.spec.map(([label, value]) => `${label}: ${value}`),
         lines: r.items.map((i) => ({ item: `${i.name}${i.type ? ' — ' + i.type : ''}`, quantity: i.quantity, unit: i.unit, total: i.line_total })),
         subtotal: r.subtotal,
         vat_percent: r.vat_percent,
         vat: r.vat,
         total_with_vat: r.total,
-        delivery_installation: r.delivery_installation
+        installation: r.delivery_installation
     };
 }
 
