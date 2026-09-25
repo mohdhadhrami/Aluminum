@@ -16,7 +16,8 @@ const DEFAULT_SETTINGS = {
     sqm_to_linear: 13,       // 1 م² = 13 متر طولي من الشرائح
     company_name: 'مصنع شرائح الألمنيوم',
     company_whatsapp: '',    // رقم واتساب الشركة بالصيغة الدولية مثل 9689XXXXXXX
-    public_base_url: ''      // رابط الموقع العام، يستخدم في رسائل واتساب
+    public_base_url: '',     // رابط الموقع العام، يستخدم في رسائل واتساب وروابط PDF
+    quote_validity_days: 15  // مدة صلاحية عرض السعر
 };
 
 const SCHEMA = `
@@ -111,6 +112,47 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
 CREATE INDEX IF NOT EXISTS idx_purchases_product ON purchases(product_id);
 CREATE INDEX IF NOT EXISTS idx_history_product ON price_history(product_id);
 CREATE INDEX IF NOT EXISTS idx_quotes_created ON quotes(created_at);
+
+-- A complete roller-shutter door: one slat product + accessories whose
+-- quantities follow the door size. door_type groups packages ("يدوي", "كهربائي").
+CREATE TABLE IF NOT EXISTS door_packages (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    door_type        TEXT NOT NULL,
+    name             TEXT NOT NULL,
+    description      TEXT,
+    slat_product_id  INTEGER NOT NULL REFERENCES products(id),
+    min_area         REAL,
+    max_area         REAL,
+    sort_order       INTEGER NOT NULL DEFAULT 0,
+    active           INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS door_package_items (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    package_id  INTEGER NOT NULL REFERENCES door_packages(id) ON DELETE CASCADE,
+    product_id  INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    basis       TEXT NOT NULL DEFAULT 'fixed' CHECK (basis IN ('fixed', 'width', 'height', 'area')),
+    factor      REAL NOT NULL DEFAULT 1,
+    optional    INTEGER NOT NULL DEFAULT 0
+);
+
+-- Wilayat with delivery / installation fees (NULL = decided after site visit)
+CREATE TABLE IF NOT EXISTS regions (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    name              TEXT NOT NULL UNIQUE,
+    governorate       TEXT,
+    delivery_fee      REAL,
+    installation_fee  REAL,
+    active            INTEGER NOT NULL DEFAULT 1
+);
+
+-- WhatsApp / test conversations with the AI sales agent
+CREATE TABLE IF NOT EXISTS agent_conversations (
+    conversation_key  TEXT PRIMARY KEY,
+    channel           TEXT NOT NULL,
+    messages_json     TEXT NOT NULL DEFAULT '[]',
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `;
 
 /* Starter catalog, inserted only into an empty database.
@@ -128,6 +170,91 @@ const SAMPLE_PRODUCTS = [
     { category: 'machine', name: 'موتور أنبوبي', type: '50 نيوتن', unit: 'piece', purchase_price: 35, is_public: 0, notes: 'سعر تجريبي — عدّله' },
     { category: 'machine', name: 'موتور جانبي', type: '600 كجم', unit: 'piece', purchase_price: 90, is_public: 0, notes: 'سعر تجريبي — عدّله' }
 ];
+
+const WILAYAT = {
+    'مسقط': ['مسقط', 'مطرح', 'بوشر', 'السيب', 'العامرات', 'قريات'],
+    'ظفار': ['صلالة', 'طاقة', 'مرباط', 'رخيوت', 'ثمريت', 'ضلكوت', 'المزيونة', 'مقشن', 'شليم وجزر الحلانيات', 'سدح'],
+    'مسندم': ['خصب', 'دبا', 'بخا', 'مدحاء'],
+    'البريمي': ['البريمي', 'محضة', 'السنينة'],
+    'الداخلية': ['نزوى', 'بهلاء', 'منح', 'الحمراء', 'أدم', 'إزكي', 'سمائل', 'بدبد', 'الجبل الأخضر'],
+    'شمال الباطنة': ['صحار', 'شناص', 'لوى', 'صحم', 'الخابورة', 'السويق'],
+    'جنوب الباطنة': ['الرستاق', 'العوابي', 'نخل', 'وادي المعاول', 'بركاء', 'المصنعة'],
+    'جنوب الشرقية': ['صور', 'الكامل والوافي', 'جعلان بني بو حسن', 'جعلان بني بو علي', 'مصيرة'],
+    'شمال الشرقية': ['إبراء', 'المضيبي', 'بدية', 'القابل', 'وادي بني خالد', 'دماء والطائيين'],
+    'الظاهرة': ['عبري', 'ينقل', 'ضنك'],
+    'الوسطى': ['هيماء', 'محوت', 'الدقم', 'الجازر']
+};
+
+/* Extra accessories the sample door packages need (hidden, placeholder prices) */
+const DOOR_SAMPLE_PRODUCTS = [
+    { key: 'guide', category: 'accessory', name: 'مجرى جانبي', type: 'ألمنيوم', unit: 'meter', purchase_price: 1.2 },
+    { key: 'axle', category: 'accessory', name: 'عمود (محور)', type: 'حديد مجلفن', unit: 'meter', purchase_price: 2.5 },
+    { key: 'lock', category: 'accessory', name: 'قفل', type: 'قفل أرضي', unit: 'piece', purchase_price: 1.5 },
+    { key: 'bottom', category: 'accessory', name: 'قاطع سفلي', type: 'ألمنيوم مع مطاط', unit: 'meter', purchase_price: 1.8 },
+    { key: 'spring', category: 'accessory', name: 'نابض (سوستة)', type: 'للأبواب اليدوية', unit: 'piece', purchase_price: 4 },
+    { key: 'remote', category: 'accessory', name: 'ريموت إضافي', type: 'لاسلكي', unit: 'piece', purchase_price: 5 },
+    { key: 'ups', category: 'accessory', name: 'بطارية احتياطية', type: 'تشغيل عند انقطاع الكهرباء', unit: 'piece', purchase_price: 45 },
+    { key: 'tubular', category: 'machine', name: 'موتور أنبوبي', type: '50 نيوتن', unit: 'piece', purchase_price: 35 },
+    { key: 'side', category: 'machine', name: 'موتور جانبي', type: '600 كجم', unit: 'piece', purchase_price: 90 }
+];
+
+const DOOR_SAMPLE_PACKAGES = [
+    { door_type: 'يدوي', name: 'يدوي اقتصادي', slat: [1.1, 0], max_area: 12, description: 'شرائح 1.1 ملم بدون صبغ مع نوابض وقفل',
+      items: [['guide', 'height', 2], ['axle', 'width', 1], ['bottom', 'width', 1], ['spring', 'fixed', 2], ['lock', 'fixed', 1]] },
+    { door_type: 'يدوي', name: 'يدوي قياسي', slat: [1.1, 1], max_area: 12, description: 'شرائح 1.1 ملم مصبوغة مع نوابض وقفل',
+      items: [['guide', 'height', 2], ['axle', 'width', 1], ['bottom', 'width', 1], ['spring', 'fixed', 2], ['lock', 'fixed', 1]] },
+    { door_type: 'كهربائي', name: 'كهربائي قياسي', slat: [1.1, 1], max_area: 12, description: 'شرائح 1.1 ملم مصبوغة مع موتور أنبوبي وريموت',
+      items: [['guide', 'height', 2], ['axle', 'width', 1], ['bottom', 'width', 1], ['tubular', 'fixed', 1], ['remote', 'fixed', 1, 1], ['ups', 'fixed', 1, 1]] },
+    { door_type: 'كهربائي', name: 'كهربائي ممتاز', slat: [1.5, 1], max_area: 30, description: 'شرائح 1.5 ملم مصبوغة مع موتور جانبي قوي للأبواب الكبيرة',
+      items: [['guide', 'height', 2], ['axle', 'width', 1], ['bottom', 'width', 1], ['side', 'fixed', 1], ['remote', 'fixed', 1, 1], ['ups', 'fixed', 1, 1]] }
+];
+
+function seedDoors(db) {
+    const { n } = db.prepare('SELECT COUNT(*) AS n FROM door_packages').get();
+    if (n > 0 || process.env.SEED_SAMPLE === '0') return;
+
+    const findOrCreate = (p) => {
+        const row = db.prepare('SELECT id FROM products WHERE category = ? AND name = ? AND IFNULL(type, \'\') = ?')
+            .get(p.category, p.name, p.type || '');
+        if (row) return row.id;
+        return Number(db.prepare(`INSERT INTO products (category, name, type, unit, purchase_price, is_public, notes)
+                                  VALUES (?, ?, ?, ?, ?, 0, 'سعر تجريبي — عدّله')`)
+            .run(p.category, p.name, p.type, p.unit, p.purchase_price).lastInsertRowid);
+    };
+    const ids = Object.fromEntries(DOOR_SAMPLE_PRODUCTS.map((p) => [p.key, findOrCreate(p)]));
+    const slatId = (thickness, painted) => {
+        const row = db.prepare(`SELECT id FROM products WHERE category = 'slat' AND pricing_mode = 'lme'
+                                AND thickness = ? AND painted = ? ORDER BY id LIMIT 1`).get(thickness, painted);
+        return row && row.id;
+    };
+
+    const insertPkg = db.prepare(`INSERT INTO door_packages (door_type, name, description, slat_product_id, max_area, sort_order)
+                                  VALUES (?, ?, ?, ?, ?, ?)`);
+    const insertItem = db.prepare(`INSERT INTO door_package_items (package_id, product_id, basis, factor, optional)
+                                   VALUES (?, ?, ?, ?, ?)`);
+    DOOR_SAMPLE_PACKAGES.forEach((pkg, i) => {
+        const slat = slatId(...pkg.slat);
+        if (!slat) return;
+        const pkgId = insertPkg.run(pkg.door_type, pkg.name, pkg.description, slat, pkg.max_area, i).lastInsertRowid;
+        for (const [key, basis, factor, optional] of pkg.items) {
+            insertItem.run(pkgId, ids[key], basis, factor, optional || 0);
+        }
+    });
+}
+
+function seedRegions(db) {
+    const { n } = db.prepare('SELECT COUNT(*) AS n FROM regions').get();
+    if (n > 0) return;
+    const insert = db.prepare('INSERT INTO regions (name, governorate) VALUES (?, ?)');
+    for (const [gov, list] of Object.entries(WILAYAT)) for (const w of list) insert.run(w, gov);
+}
+
+/* Additive migrations for databases created by earlier versions */
+function migrate(db) {
+    const cols = db.prepare('PRAGMA table_info(quotes)').all().map((c) => c.name);
+    if (!cols.includes('access_key')) db.exec('ALTER TABLE quotes ADD COLUMN access_key TEXT');
+    if (!cols.includes('details_json')) db.exec('ALTER TABLE quotes ADD COLUMN details_json TEXT');
+}
 
 function openDatabase(file = process.env.DB_FILE || path.join(__dirname, '..', 'data', 'aluminum.db')) {
     if (file !== ':memory:') {
@@ -155,6 +282,9 @@ function openDatabase(file = process.env.DB_FILE || path.join(__dirname, '..', '
                 p.painted || 0, p.is_public ?? 1, p.notes ?? null);
         }
     }
+    migrate(db);
+    seedDoors(db);
+    seedRegions(db);
     return db;
 }
 

@@ -7,6 +7,7 @@
 const crypto = require('node:crypto');
 const { getSettings } = require('./db');
 const { unitSellPrice } = require('./pricing');
+const agent = require('./agent');
 
 const env = () => ({
     token: process.env.WHATSAPP_TOKEN,
@@ -26,22 +27,30 @@ function normalizePhone(phone) {
     return digits;
 }
 
-async function sendText(to, body) {
+async function send(to, message) {
     const { token, phoneNumberId, apiVersion } = env();
     if (!isConfigured()) return { skipped: true };
     const res = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            messaging_product: 'whatsapp',
-            to: normalizePhone(to),
-            type: 'text',
-            text: { preview_url: true, body }
-        }),
-        signal: AbortSignal.timeout(10_000)
+        body: JSON.stringify({ messaging_product: 'whatsapp', to: normalizePhone(to), ...message }),
+        signal: AbortSignal.timeout(15_000)
     });
     if (!res.ok) throw new Error(`WhatsApp API ${res.status}: ${await res.text()}`);
     return res.json();
+}
+
+// WhatsApp caps a text message at 4096 characters
+const sendText = (to, body) => send(to, { type: 'text', text: { preview_url: true, body: String(body).slice(0, 4096) } });
+
+/* Send the quotation PDF as a WhatsApp document (Meta downloads it from our public URL) */
+function sendQuotePdf(db, to, quote) {
+    const base = getSettings(db).public_base_url.replace(/\/$/, '');
+    if (!base) return Promise.resolve({ skipped: 'public_base_url غير مضبوط' });
+    return send(to, {
+        type: 'document',
+        document: { link: base + quote.pdf_url, filename: `عرض-سعر-${quote.ref}.pdf`, caption: `عرض السعر رقم ${quote.ref}` }
+    });
 }
 
 const UNIT_LABELS = { meter: 'متر', piece: 'قطعة', m2: 'م²', set: 'طقم', kg: 'كجم' };
@@ -92,7 +101,8 @@ async function notifyQuote(db, quote) {
     const text = quoteText(quote, settings);
     const jobs = [];
     if (env().notifyTo) jobs.push(sendText(env().notifyTo, '🆕 طلب عرض سعر جديد\n\n' + text));
-    jobs.push(sendText(quote.customer_phone, 'شكراً لتواصلك معنا 🌟\n\n' + text));
+    jobs.push(sendText(quote.customer_phone, 'شكراً لتواصلك معنا 🌟\n\n' + text)
+        .then(() => sendQuotePdf(db, quote.customer_phone, quote)));
     const results = await Promise.allSettled(jobs);
     for (const r of results) if (r.status === 'rejected') console.error('[whatsapp]', r.reason.message);
 }
@@ -106,13 +116,70 @@ function menuText(settings) {
     return lines.join('\n');
 }
 
-async function handleIncomingMessage(db, message) {
-    if (message.type !== 'text') return;
+/* Keyword bot used when no Claude API key is configured */
+async function keywordReply(db, message) {
     const text = message.text.body.trim().toLowerCase();
     const reply = /سعر|اسعار|أسعار|الأسعار|price|prices/.test(text)
         ? priceListText(db)
         : menuText(getSettings(db));
     await sendText(message.from, reply);
+}
+
+async function agentReply(db, message, saveQuote) {
+    const result = await agent.chat({
+        db,
+        key: 'wa:' + message.from,
+        channel: 'whatsapp',
+        phone: message.from,
+        text: message.text.body,
+        createQuote: saveQuote,
+        notifyHuman: async (summary) => {
+            if (env().notifyTo) await sendText(env().notifyTo, `🙋 عميل يطلب التواصل: +${message.from}\n\n${summary}`);
+        }
+    });
+    await sendText(message.from, result.reply);
+    for (const e of result.events) {
+        if (e.type !== 'quote_created') continue;
+        await sendQuotePdf(db, message.from, e.quote);
+        if (env().notifyTo) {
+            await sendText(env().notifyTo, '🆕 عرض سعر من المساعد الذكي\n\n' + quoteText(e.quote, getSettings(db)));
+        }
+    }
+}
+
+async function handleIncomingMessage(db, message, saveQuote) {
+    if (message.type !== 'text') {
+        await sendText(message.from, 'أستطيع قراءة الرسائل النصية فقط حالياً 🙏 اكتب لي طلبك من فضلك.');
+        return;
+    }
+    if (agent.isConfigured()) {
+        try {
+            await agentReply(db, message, saveQuote);
+        } catch (err) {
+            console.error('[agent]', err.message);
+            await sendText(message.from, 'عذراً، حدث خطأ مؤقت. حاول مرة أخرى بعد قليل، أو انتظر تواصل فريقنا معك.');
+        }
+    } else {
+        await keywordReply(db, message);
+    }
+}
+
+/* Meta retries deliveries — remember recent message ids to answer each only once */
+const seenMessages = new Map();
+function firstTimeSeen(id) {
+    const now = Date.now();
+    for (const [k, t] of seenMessages) if (now - t > 60 * 60_000) seenMessages.delete(k);
+    if (seenMessages.has(id)) return false;
+    seenMessages.set(id, now);
+    return true;
+}
+
+/* One message at a time per customer, so replies stay in order */
+const queues = new Map();
+function enqueue(phone, job) {
+    const next = (queues.get(phone) || Promise.resolve()).then(job).catch((err) => console.error('[whatsapp]', err.message));
+    queues.set(phone, next);
+    next.finally(() => { if (queues.get(phone) === next) queues.delete(phone); });
 }
 
 function verifySignature(req) {
@@ -124,7 +191,7 @@ function verifySignature(req) {
         crypto.timingSafeEqual(Buffer.from(header), Buffer.from(expected));
 }
 
-function registerRoutes(app, db) {
+function registerRoutes(app, db, { saveQuote }) {
     // Meta calls this once when you save the webhook URL in the app dashboard
     app.get('/webhooks/whatsapp', (req, res) => {
         const { verifyToken } = env();
@@ -142,7 +209,8 @@ function registerRoutes(app, db) {
             .flatMap((e) => e.changes || [])
             .flatMap((c) => (c.value && c.value.messages) || []);
         for (const m of messages) {
-            handleIncomingMessage(db, m).catch((err) => console.error('[whatsapp]', err.message));
+            if (!m.id || !firstTimeSeen(m.id)) continue;
+            enqueue(m.from, () => handleIncomingMessage(db, m, saveQuote));
         }
     });
 }

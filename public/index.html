@@ -568,6 +568,22 @@
             border-radius: 8px; font-family: Consolas, monospace; font-size: 0.82rem; overflow-x: auto; white-space: pre;
         }
         .info-list { padding-inline-start: 20px; font-size: 0.9rem; }
+        .chat-log {
+            background: #e5ddd5; border-radius: 8px; padding: 14px; height: 420px; overflow-y: auto;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .bubble { max-width: 78%; padding: 8px 12px; border-radius: 10px; white-space: pre-wrap; font-size: 0.92rem; box-shadow: 0 1px 1px rgba(0,0,0,0.1); }
+        .bubble.user { align-self: flex-start; background: #dcf8c6; }
+        .bubble.bot { align-self: flex-end; background: #ffffff; }
+        .bubble.event { align-self: center; background: #fff3cd; font-size: 0.82rem; }
+        .chat-input { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+        .chat-input input { flex: 1; min-width: 200px; padding: 10px 14px; border: 2px solid var(--border); border-radius: 8px; font-family: inherit; }
+        .pkg-card { border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+        .pkg-card h4 { color: var(--primary); margin-bottom: 4px; }
+        .pkg-card ul { padding-inline-start: 20px; font-size: 0.88rem; margin: 6px 0 10px; }
+        .pkg-items select, .pkg-items input { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; }
+        .range-box { background: var(--bg); border-radius: 8px; padding: 12px 16px; }
+        .range-box strong { color: var(--accent); font-size: 1.1rem; }
         .info-list li { margin-bottom: 6px; }
 
         /* ===== Print ===== */
@@ -591,7 +607,9 @@
             <button class="tab-btn" data-tab="weight" onclick="switchTab('weight')">حاسبة الوزن</button>
             <button class="tab-btn" data-tab="products" onclick="switchTab('products')">المنتجات والأسعار</button>
             <button class="tab-btn" data-tab="purchases" onclick="switchTab('purchases')">أسعار الشراء</button>
+            <button class="tab-btn" data-tab="doors" onclick="switchTab('doors')">أبواب الرول شتر</button>
             <button class="tab-btn" data-tab="quotes" onclick="switchTab('quotes')">طلبات العروض</button>
+            <button class="tab-btn" data-tab="agent" onclick="switchTab('agent')">المساعد الذكي</button>
             <button class="tab-btn" data-tab="integrations" onclick="switchTab('integrations')">الربط</button>
         </div>
     </header>
@@ -1040,6 +1058,98 @@
             </div>
         </div>
 
+        <!-- ==================== TAB: Roller shutter door packages ==================== -->
+        <div id="tab-doors" class="tab-content">
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">?</span>
+                    تجربة التسعير — نفس الأرقام التي يعطيها المساعد الذكي
+                </div>
+                <div class="form-grid">
+                    <div class="form-group"><label>العرض <span class="unit">(سم)</span></label><input type="number" id="pvWidth" value="300"></div>
+                    <div class="form-group"><label>الارتفاع <span class="unit">(سم)</span></label><input type="number" id="pvHeight" value="250"></div>
+                    <div class="form-group"><label>عدد الأبواب</label><input type="number" id="pvCount" value="1" min="1"></div>
+                    <div class="form-group"><label>النوع</label><select id="pvType"></select></div>
+                    <div class="form-group"><label>الولاية</label><select id="pvRegion"><option value="">— بدون —</option></select></div>
+                    <div class="form-group" style="justify-content:flex-end;"><button class="btn btn-primary" onclick="previewDoor()">احسب</button></div>
+                </div>
+                <div id="pvResult" style="margin-top: 14px;"></div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">D</span>
+                    <span id="pkgFormTitle">إضافة باقة باب</span>
+                </div>
+                <input type="hidden" id="pkgId">
+                <div class="form-grid">
+                    <div class="form-group"><label>نوع الباب <span class="unit">(مثل يدوي / كهربائي)</span></label><input type="text" id="pkgType" list="doorTypesList"><datalist id="doorTypesList"></datalist></div>
+                    <div class="form-group"><label>اسم الباقة</label><input type="text" id="pkgName"></div>
+                    <div class="form-group"><label>الشرائح المستخدمة</label><select id="pkgSlat"></select></div>
+                    <div class="form-group"><label>أقل مساحة <span class="unit">(م² — اختياري)</span></label><input type="number" id="pkgMin" step="0.1"></div>
+                    <div class="form-group"><label>أكبر مساحة <span class="unit">(م² — اختياري)</span></label><input type="number" id="pkgMax" step="0.1"></div>
+                    <div class="form-group"><label>الترتيب</label><input type="number" id="pkgSort" value="0"></div>
+                    <div class="form-group" style="grid-column: 1 / -1;"><label>الوصف <span class="unit">(يستخدمه المساعد لشرح الفروقات)</span></label><input type="text" id="pkgDesc"></div>
+                </div>
+                <p style="margin: 16px 0 8px; font-weight: 600;">المكونات <span class="status-text">— الكمية = المعامل × (1 أو العرض أو الارتفاع أو المساحة بالمتر) × عدد الأبواب</span></p>
+                <div class="table-wrapper">
+                    <table>
+                        <thead><tr><th>المنتج</th><th>حساب الكمية</th><th>المعامل</th><th>اختياري</th><th></th></tr></thead>
+                        <tbody id="pkgItemsBody"></tbody>
+                    </table>
+                </div>
+                <div class="check-row">
+                    <label><input type="checkbox" id="pkgActive" checked> مفعّلة</label>
+                </div>
+                <div class="form-buttons">
+                    <button class="btn btn-outline" onclick="addPkgItemRow()">+ مكوّن</button>
+                    <button class="btn btn-primary" onclick="savePackage()">حفظ الباقة</button>
+                    <button class="btn btn-outline" onclick="resetPackageForm()">جديد</button>
+                    <span id="pkgStatus" class="status-text"></span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">≡</span>
+                    الباقات
+                </div>
+                <div id="packagesList"></div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">M</span>
+                    الولايات ورسوم التوصيل والتركيب
+                </div>
+                <p class="status-text" style="margin-bottom: 10px;">اترك الحقل فارغاً إذا كانت الرسوم تُحدد بعد المعاينة. رسوم التركيب لكل باب، والتوصيل مرة واحدة للطلب.</p>
+                <div class="filter-row"><input type="text" id="regionFilter" placeholder="بحث..." oninput="renderRegions()" style="padding: 8px 12px; border: 2px solid var(--border); border-radius: 8px; font-family: inherit;"></div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead><tr><th>المحافظة</th><th>الولاية</th><th>التوصيل (ر.ع)</th><th>التركيب لكل باب (ر.ع)</th><th></th></tr></thead>
+                        <tbody id="regionsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB: AI agent console ==================== -->
+        <div id="tab-agent" class="tab-content">
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">AI</span>
+                    تجربة المساعد الذكي (نفس مساعد واتساب)
+                </div>
+                <p style="margin-bottom: 12px;">الحالة: <span id="agentStatus" class="badge">—</span> <span id="agentModel" class="status-text"></span></p>
+                <div id="chatLog" class="chat-log"></div>
+                <div class="chat-input">
+                    <input type="text" id="chatInput" placeholder="اكتب كأنك عميل... مثال: أبغى باب رول شتر لمحل" onkeydown="if(event.key==='Enter')sendChat()">
+                    <button class="btn btn-primary" id="chatSend" onclick="sendChat()">إرسال</button>
+                    <button class="btn btn-outline" onclick="resetChat()">محادثة جديدة</button>
+                </div>
+            </div>
+        </div>
+
         <!-- ==================== TAB 5: Quote requests ==================== -->
         <div id="tab-quotes" class="tab-content">
             <div class="card">
@@ -1069,7 +1179,9 @@
                                 <th>الهاتف</th>
                                 <th>البنود</th>
                                 <th>الإجمالي (ر.ع)</th>
+                                <th>المصدر</th>
                                 <th>الحالة</th>
+                                <th>PDF</th>
                             </tr>
                         </thead>
                         <tbody id="quotesBody"></tbody>
@@ -1102,6 +1214,10 @@
                     <div class="form-group">
                         <label>متر طولي لكل م²</label>
                         <input type="number" id="sqmToLinear" min="1" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label>صلاحية عرض السعر <span class="unit">(يوم)</span></label>
+                        <input type="number" id="quoteValidity" min="1" step="1">
                     </div>
                 </div>
                 <div class="db-actions">

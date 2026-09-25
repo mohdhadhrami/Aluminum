@@ -56,6 +56,7 @@
         .btn-primary { background: var(--primary); color: #fff; }
         .btn-accent { background: var(--accent); color: #fff; width: 100%; padding: 13px; font-size: 1.05rem; }
         .btn-success { background: #25d366; color: #fff; text-decoration: none; display: inline-block; }
+        .btn-pdf { background: var(--primary); color: #fff; text-decoration: none; display: inline-block; }
         .btn-link { background: none; color: var(--danger); padding: 4px 8px; }
         .btn:disabled { opacity: 0.6; cursor: wait; }
         .mode { display: flex; gap: 16px; margin-bottom: 10px; font-size: 0.9rem; }
@@ -156,7 +157,10 @@
             <p>رقم عرض السعر:</p>
             <div class="ref" id="quoteRef"></div>
             <p>الإجمالي: <strong id="quoteTotal"></strong> ر.ع — سنتواصل معك قريباً.</p>
-            <p style="margin-top: 14px;"><a class="btn btn-success" id="waLink" target="_blank" rel="noopener" hidden>تابع عبر واتساب</a></p>
+            <p style="margin-top: 14px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                <a class="btn btn-pdf" id="pdfLink" target="_blank" rel="noopener">📄 تحميل عرض السعر PDF</a>
+                <a class="btn btn-success" id="waLink" target="_blank" rel="noopener" hidden>تابع عبر واتساب</a>
+            </p>
             <p style="margin-top: 14px;"><button class="btn btn-primary" onclick="location.reload()">طلب جديد</button></p>
         </section>
     </main>
@@ -291,6 +295,7 @@
             if (!res.ok) throw new Error(data.error || 'تعذر إرسال الطلب');
             $('quoteRef').textContent = data.ref;
             $('quoteTotal').textContent = data.total.toFixed(2);
+            $('pdfLink').href = data.pdf_url;
             if (data.whatsapp_link) { $('waLink').href = data.whatsapp_link; $('waLink').hidden = false; }
             document.querySelectorAll('main > .card:not(#successCard)').forEach((c) => { c.hidden = true; });
             $('successCard').hidden = false;

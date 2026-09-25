@@ -7,6 +7,8 @@
 const CATEGORY_NAMES = { slat: 'شرائح', accessory: 'إكسسوارات', machine: 'مكائن' };
 const UNIT_NAMES = { meter: 'متر', piece: 'قطعة', m2: 'م²', set: 'طقم', kg: 'كجم' };
 const STATUS_NAMES = { new: 'جديد', contacted: 'تم التواصل', accepted: 'مقبول', rejected: 'مرفوض', done: 'مكتمل' };
+const SOURCE_NAMES = { web: 'الحاسبة', whatsapp: 'واتساب (AI)', 'agent-test': 'تجربة المساعد' };
+const BASIS_NAMES = { fixed: 'ثابت', width: '× العرض', height: '× الارتفاع', area: '× المساحة' };
 const FIELD_NAMES = { purchase_price: 'سعر الشراء', sell_price: 'سعر البيع الثابت', profit_percent: 'نسبة الربح' };
 // Approximate OMR per unit of currency — a starting suggestion, always editable
 const SUGGESTED_RATES = { OMR: 1, AED: 0.1048, SAR: 0.1026, CNY: 0.053, EUR: 0.42 };
@@ -73,6 +75,7 @@ function applySettings(s) {
     $id('companyWhatsapp').value = s.company_whatsapp || '';
     $id('publicBaseUrl').value = s.public_base_url || '';
     $id('sqmToLinear').value = s.sqm_to_linear;
+    $id('quoteValidity').value = s.quote_validity_days;
     recalculateAll();
 }
 
@@ -91,7 +94,8 @@ async function saveSettingsToServer() {
             company_name: $id('companyName').value,
             company_whatsapp: $id('companyWhatsapp').value,
             public_base_url: $id('publicBaseUrl').value,
-            sqm_to_linear: parseFloat($id('sqmToLinear').value) || 13
+            sqm_to_linear: parseFloat($id('sqmToLinear').value) || 13,
+            quote_validity_days: parseInt($id('quoteValidity').value, 10) || 15
         });
         applySettings(s);
         await loadProducts(); // LME-based prices depend on these settings
@@ -337,13 +341,31 @@ async function loadQuotes() {
             <td><a href="https://wa.me/${esc(q.customer_phone)}" target="_blank" rel="noopener">${esc(q.customer_phone)}</a></td>
             <td class="quote-items">${q.items.map((i) => `${esc(i.name)}${i.type ? ' — ' + esc(i.type) : ''}: ${i.quantity} × ${i.unit_price.toFixed(2)}`).join('<br>')}</td>
             <td><strong>${q.total.toFixed(2)}</strong></td>
+            <td>${esc(SOURCE_NAMES[q.source] || q.source)}</td>
             <td>
                 <select onchange="setQuoteStatus(${q.id}, this.value)">
                     ${Object.entries(STATUS_NAMES).map(([k, v]) => `<option value="${k}" ${k === q.status ? 'selected' : ''}>${v}</option>`).join('')}
                 </select>
             </td>
+            <td><button class="btn btn-outline btn-sm" onclick="openQuotePdf(${q.id})">PDF</button></td>
         </tr>`).join('');
     $id('quotesEmpty').style.display = rows.length ? 'none' : 'block';
+}
+
+/* The admin PDF needs the auth header, so fetch it as a blob and download it */
+async function openQuotePdf(id) {
+    let token = '';
+    try { token = localStorage.getItem('adminToken') || ''; } catch { /* ignore */ }
+    const res = await fetch(`/api/admin/quotes/${id}/pdf`, { headers: { Authorization: 'Bearer ' + token } });
+    if (!res.ok) return alert('تعذر إنشاء ملف PDF');
+    const name = (res.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await res.blob());
+    a.download = name ? name[1] : 'quotation.pdf';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
 }
 
 async function setQuoteStatus(id, status) {
@@ -435,6 +457,206 @@ async function previewPriceList() {
     box.hidden = false;
 }
 
+/* -------------------------- Door packages -------------------------- */
+
+let doorPackages = [];
+let regions = [];
+
+async function loadDoors() {
+    [doorPackages, regions] = await Promise.all([api('GET', '/api/admin/door-packages'), api('GET', '/api/admin/regions')]);
+    const types = [...new Set(doorPackages.map((p) => p.door_type))];
+    $id('doorTypesList').innerHTML = types.map((t) => `<option value="${esc(t)}">`).join('');
+    $id('pvType').innerHTML = '<option value="">كل الأنواع</option>' + types.map((t) => `<option>${esc(t)}</option>`).join('');
+    $id('pvRegion').innerHTML = '<option value="">— بدون —</option>' +
+        regions.filter((r) => r.active).map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join('');
+    $id('pkgSlat').innerHTML = products.filter((p) => p.category === 'slat')
+        .map((p) => `<option value="${p.id}">${esc(p.name)} — ${esc(p.type || '')}</option>`).join('');
+    renderPackages();
+    renderRegions();
+    if (!$id('pkgItemsBody').children.length) resetPackageForm();
+}
+
+function renderPackages() {
+    $id('packagesList').innerHTML = doorPackages.map((p) => `
+        <div class="pkg-card" style="${p.active ? '' : 'opacity:0.55'}">
+            <span class="badge lme">${esc(p.door_type)}</span>
+            <h4>${esc(p.name)}</h4>
+            <div class="status-text">${esc(p.description || '')}${p.max_area ? ` — حتى ${p.max_area} م²` : ''}${p.min_area ? ` — من ${p.min_area} م²` : ''}</div>
+            <ul>${p.items.map((i) => `<li>${esc(i.product_name)} — ${i.factor} ${BASIS_NAMES[i.basis]}${i.optional ? ' <span class="badge">اختياري</span>' : ''}</li>`).join('')}</ul>
+            <button class="btn btn-outline btn-sm" onclick="editPackage(${p.id})">تعديل</button>
+            <button class="btn btn-danger btn-sm" onclick="deletePackage(${p.id})">حذف</button>
+        </div>`).join('') || '<div class="empty-message">لا توجد باقات.</div>';
+}
+
+function addPkgItemRow(item = { product_id: '', basis: 'fixed', factor: 1, optional: 0 }) {
+    const tr = document.createElement('tr');
+    tr.className = 'pkg-items';
+    const options = products.filter((p) => p.category !== 'slat')
+        .map((p) => `<option value="${p.id}" ${p.id === item.product_id ? 'selected' : ''}>${esc(CATEGORY_NAMES[p.category])} — ${esc(p.name)}${p.type ? ' — ' + esc(p.type) : ''}</option>`).join('');
+    tr.innerHTML = `
+        <td><select class="pi-product">${options}</select></td>
+        <td><select class="pi-basis">${Object.entries(BASIS_NAMES).map(([k, v]) => `<option value="${k}" ${k === item.basis ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+        <td><input class="pi-factor" type="number" step="0.01" min="0.01" value="${item.factor}" style="width:80px"></td>
+        <td><input class="pi-optional" type="checkbox" ${item.optional ? 'checked' : ''}></td>
+        <td><button class="btn btn-danger btn-sm" onclick="this.closest('tr').remove()">✕</button></td>`;
+    $id('pkgItemsBody').appendChild(tr);
+}
+
+function resetPackageForm() {
+    $id('pkgId').value = '';
+    $id('pkgFormTitle').textContent = 'إضافة باقة باب';
+    for (const id of ['pkgType', 'pkgName', 'pkgMin', 'pkgMax', 'pkgDesc']) $id(id).value = '';
+    $id('pkgSort').value = 0;
+    $id('pkgActive').checked = true;
+    $id('pkgItemsBody').innerHTML = '';
+    setStatus('pkgStatus', '');
+}
+
+function editPackage(id) {
+    const p = doorPackages.find((x) => x.id === id);
+    if (!p) return;
+    $id('pkgId').value = p.id;
+    $id('pkgFormTitle').textContent = 'تعديل: ' + p.name;
+    $id('pkgType').value = p.door_type;
+    $id('pkgName').value = p.name;
+    $id('pkgSlat').value = p.slat_product_id;
+    $id('pkgMin').value = p.min_area ?? '';
+    $id('pkgMax').value = p.max_area ?? '';
+    $id('pkgSort').value = p.sort_order;
+    $id('pkgDesc').value = p.description || '';
+    $id('pkgActive').checked = !!p.active;
+    $id('pkgItemsBody').innerHTML = '';
+    p.items.forEach(addPkgItemRow);
+    $id('pkgFormTitle').scrollIntoView({ behavior: 'smooth' });
+}
+
+async function savePackage() {
+    const id = $id('pkgId').value;
+    const items = [...document.querySelectorAll('#pkgItemsBody tr')].map((tr) => ({
+        product_id: Number(tr.querySelector('.pi-product').value),
+        basis: tr.querySelector('.pi-basis').value,
+        factor: Number(tr.querySelector('.pi-factor').value),
+        optional: tr.querySelector('.pi-optional').checked
+    }));
+    try {
+        await api(id ? 'PUT' : 'POST', id ? `/api/admin/door-packages/${id}` : '/api/admin/door-packages', {
+            door_type: $id('pkgType').value, name: $id('pkgName').value, description: $id('pkgDesc').value,
+            slat_product_id: Number($id('pkgSlat').value), min_area: $id('pkgMin').value, max_area: $id('pkgMax').value,
+            sort_order: $id('pkgSort').value, active: $id('pkgActive').checked, items
+        });
+        resetPackageForm();
+        setStatus('pkgStatus', 'تم الحفظ ✓', 'ok');
+        await loadDoors();
+    } catch (err) {
+        setStatus('pkgStatus', err.message, 'err');
+    }
+}
+
+async function deletePackage(id) {
+    if (!confirm('حذف هذه الباقة؟')) return;
+    await api('DELETE', `/api/admin/door-packages/${id}`);
+    await loadDoors();
+}
+
+async function previewDoor() {
+    const qs = new URLSearchParams({
+        width_cm: $id('pvWidth').value, height_cm: $id('pvHeight').value, count: $id('pvCount').value,
+        door_type: $id('pvType').value, region_id: $id('pvRegion').value
+    });
+    try {
+        const { range, packages } = await api('GET', '/api/admin/door-packages/preview?' + qs);
+        if (!range.available) { $id('pvResult').innerHTML = `<div class="range-box">${esc(range.message)}</div>`; return; }
+        $id('pvResult').innerHTML = `
+            <div class="range-box">النطاق: <strong>من ${range.from.toFixed(2)} إلى ${range.to.toFixed(2)} ر.ع</strong>
+                شامل الضريبة — المساحة ${range.area_m2} م² — ${esc(range.delivery_installation)}</div>
+            ${packages.map((p) => `
+                <div class="pkg-card" style="margin-top:10px;">
+                    <h4>${esc(p.package_name)} — ${p.base_price_with_vat.toFixed(2)} ر.ع</h4>
+                    <div class="status-text">${esc(p.slats)} + ${p.included.map(esc).join('، ')}</div>
+                    ${p.optional_extras.length ? `<ul>${p.optional_extras.map((e) => `<li>${esc(e.name)}: +${e.adds_with_vat.toFixed(2)} ر.ع</li>`).join('')}</ul>` : ''}
+                </div>`).join('')}`;
+    } catch (err) {
+        $id('pvResult').innerHTML = `<div class="range-box" style="color:var(--danger)">${esc(err.message)}</div>`;
+    }
+}
+
+function renderRegions() {
+    const f = $id('regionFilter').value.trim();
+    $id('regionsBody').innerHTML = regions
+        .filter((r) => !f || r.name.includes(f) || (r.governorate || '').includes(f))
+        .map((r) => `
+        <tr>
+            <td>${esc(r.governorate || '')}</td>
+            <td>${esc(r.name)}</td>
+            <td><input type="number" min="0" step="0.5" id="rd${r.id}" value="${r.delivery_fee ?? ''}" placeholder="بعد المعاينة" style="width:110px"></td>
+            <td><input type="number" min="0" step="0.5" id="ri${r.id}" value="${r.installation_fee ?? ''}" placeholder="بعد المعاينة" style="width:110px"></td>
+            <td><button class="btn btn-outline btn-sm" onclick="saveRegion(${r.id}, this)">حفظ</button></td>
+        </tr>`).join('');
+}
+
+async function saveRegion(id, btn) {
+    try {
+        const r = await api('PUT', `/api/admin/regions/${id}`, { delivery_fee: $id('rd' + id).value, installation_fee: $id('ri' + id).value });
+        regions[regions.findIndex((x) => x.id === id)] = r;
+        btn.textContent = '✓';
+        setTimeout(() => { btn.textContent = 'حفظ'; }, 1500);
+    } catch (err) {
+        alert(err.message);
+    }
+}
+
+/* --------------------------- Agent console ------------------------- */
+
+const chatSession = 'admin-' + Math.random().toString(36).slice(2, 8);
+
+function bubble(kind, content) {
+    const div = document.createElement('div');
+    div.className = 'bubble ' + kind;
+    if (content instanceof Node) div.appendChild(content); else div.textContent = content;
+    $id('chatLog').appendChild(div);
+    $id('chatLog').scrollTop = $id('chatLog').scrollHeight;
+}
+
+async function loadAgentStatus() {
+    const s = await api('GET', '/api/admin/agent/status');
+    $id('agentStatus').textContent = s.configured ? 'مفعّل' : 'غير مفعّل — أضف ANTHROPIC_API_KEY في ملف .env';
+    $id('agentStatus').className = 'badge' + (s.configured ? ' on' : '');
+    $id('agentModel').textContent = s.configured ? 'النموذج: ' + s.model : '';
+}
+
+async function sendChat() {
+    const input = $id('chatInput');
+    const message = input.value.trim();
+    if (!message) return;
+    input.value = '';
+    bubble('user', message);
+    $id('chatSend').disabled = true;
+    try {
+        const r = await api('POST', '/api/admin/agent/chat', { session: chatSession, message });
+        bubble('bot', r.reply);
+        for (const e of r.events) {
+            if (e.type === 'quote_created') {
+                const a = document.createElement('a');
+                a.href = e.pdf_url; a.target = '_blank'; a.rel = 'noopener';
+                a.textContent = `📄 عرض سعر ${e.ref} — ${e.total.toFixed(2)} ر.ع (فتح PDF)`;
+                bubble('event', a);
+            } else if (e.type === 'human_requested') {
+                bubble('event', '🙋 طلب تحويل لموظف: ' + e.summary);
+            }
+        }
+    } catch (err) {
+        bubble('event', '⚠️ ' + err.message);
+    } finally {
+        $id('chatSend').disabled = false;
+        input.focus();
+    }
+}
+
+async function resetChat() {
+    await api('POST', '/api/admin/agent/reset', { session: chatSession });
+    $id('chatLog').innerHTML = '';
+}
+
 /* ------------------------------ Boot ------------------------------ */
 
 const baseSwitchTab = switchTab;
@@ -443,12 +665,13 @@ window.switchTab = function (tabId) {
     if (!online) return;
     if (tabId === 'quotes') loadQuotes();
     if (tabId === 'products') renderProducts();
+    if (tabId === 'doors') loadDoors();
 };
 
 async function initAdmin() {
     applySettings(await api('GET', '/api/admin/settings'));
     online = true;
-    await Promise.all([loadProducts(), loadPurchases(), loadHooks()]);
+    await Promise.all([loadProducts(), loadPurchases(), loadHooks(), loadAgentStatus()]);
 }
 
 (async function boot() {

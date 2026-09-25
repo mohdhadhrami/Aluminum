@@ -8,6 +8,9 @@ const { openDatabase, getSettings, saveSettings } = require('./db');
 const { unitCost, unitSellPrice, priceQuote, round2 } = require('./pricing');
 const webhooks = require('./webhooks');
 const whatsapp = require('./whatsapp');
+const doors = require('./doors');
+const agent = require('./agent');
+const { renderQuotePdf } = require('./pdf');
 
 const CATEGORIES = ['slat', 'accessory', 'machine'];
 const UNITS = ['meter', 'piece', 'm2', 'set', 'kg'];
@@ -100,6 +103,51 @@ function makeRef() {
     return `Q${ymd}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 }
 
+const parseQuote = ({ items_json, details_json, ...q }) => ({
+    ...q, items: JSON.parse(items_json), details: details_json ? JSON.parse(details_json) : null
+});
+
+const pdfPath = (quote) => `/quotes/${quote.ref}.pdf?k=${quote.access_key}`;
+
+/* Persist a priced quote (from the web calculator or the AI agent) and notify integrations */
+function saveQuote(db, { customer_name, customer_phone, customer_city, notes, source, priced, details = null }) {
+    const quote = {
+        ref: makeRef(),
+        access_key: crypto.randomBytes(16).toString('hex'),
+        customer_name: String(customer_name).trim().slice(0, 120),
+        customer_phone: whatsapp.normalizePhone(customer_phone),
+        customer_city: customer_city ? String(customer_city).slice(0, 80) : null,
+        notes: notes ? String(notes).slice(0, 1000) : null,
+        items: priced.items,
+        subtotal: priced.subtotal,
+        vat_percent: priced.vat_percent,
+        vat: priced.vat,
+        total: priced.total,
+        details,
+        status: 'new',
+        source
+    };
+    const info = db.prepare(`INSERT INTO quotes (ref, access_key, customer_name, customer_phone, customer_city, notes,
+                             items_json, details_json, subtotal, vat_percent, vat, total, source)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(quote.ref, quote.access_key, quote.customer_name, quote.customer_phone, quote.customer_city, quote.notes,
+            JSON.stringify(quote.items), details ? JSON.stringify(details) : null,
+            quote.subtotal, quote.vat_percent, quote.vat, quote.total, quote.source);
+    quote.id = Number(info.lastInsertRowid);
+    quote.created_at = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    quote.pdf_url = pdfPath(quote);
+
+    const { access_key, ...publicQuote } = quote;
+    webhooks.emit(db, 'quote.created', publicQuote);
+    return quote;
+}
+
+function sendPdf(res, quote, settings) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="quotation-${quote.ref}.pdf"`);
+    renderQuotePdf(quote, settings, res);
+}
+
 function createApp(db) {
     const app = express();
     app.set('trust proxy', process.env.TRUST_PROXY === '1');
@@ -138,34 +186,31 @@ function createApp(db) {
         const rows = db.prepare('SELECT * FROM products WHERE active = 1 AND is_public = 1').all();
         const priced = priceQuote(items, new Map(rows.map((p) => [p.id, p])), settings);
 
-        const quote = {
-            ref: makeRef(),
-            customer_name: String(customer_name).trim().slice(0, 120),
-            customer_phone: phone,
-            customer_city: customer_city ? String(customer_city).slice(0, 80) : null,
-            notes: notes ? String(notes).slice(0, 1000) : null,
-            ...priced,
-            status: 'new',
-            source: 'web'
-        };
-        const info = db.prepare(`INSERT INTO quotes (ref, customer_name, customer_phone, customer_city, notes,
-                                 items_json, subtotal, vat_percent, vat, total, source)
-                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-            .run(quote.ref, quote.customer_name, quote.customer_phone, quote.customer_city, quote.notes,
-                JSON.stringify(quote.items), quote.subtotal, quote.vat_percent, quote.vat, quote.total, quote.source);
-        quote.id = Number(info.lastInsertRowid);
-
-        webhooks.emit(db, 'quote.created', quote);
+        const quote = saveQuote(db, {
+            customer_name, customer_phone: phone, customer_city, notes, source: 'web', priced
+        });
         whatsapp.notifyQuote(db, quote).catch((err) => console.error('[whatsapp]', err.message));
 
         const waText = encodeURIComponent(`مرحباً، أرغب بمتابعة عرض السعر رقم ${quote.ref}`);
+        const { access_key, ...publicQuote } = quote;
         res.status(201).json({
-            ...quote,
+            ...publicQuote,
             whatsapp_link: settings.company_whatsapp
                 ? `https://wa.me/${whatsapp.normalizePhone(settings.company_whatsapp)}?text=${waText}`
                 : null
         });
     }));
+
+    /* Customer-facing PDF: the random key in the link is the access control */
+    app.get('/quotes/:ref.pdf', (req, res) => {
+        const row = db.prepare('SELECT * FROM quotes WHERE ref = ?').get(req.params.ref);
+        const key = String(req.query.k || '');
+        if (!row || !row.access_key || key.length !== row.access_key.length ||
+            !crypto.timingSafeEqual(Buffer.from(key), Buffer.from(row.access_key))) {
+            return res.status(404).type('text/plain').send('Not found');
+        }
+        sendPdf(res, parseQuote(row), getSettings(db));
+    });
 
     /* ------------------------- Admin API -------------------------- */
 
@@ -283,17 +328,139 @@ function createApp(db) {
         const where = req.query.status ? 'WHERE status = ?' : '';
         const args = req.query.status ? [req.query.status] : [];
         const rows = db.prepare(`SELECT * FROM quotes ${where} ORDER BY id DESC LIMIT 500`).all(...args);
-        res.json(rows.map(({ items_json, ...q }) => ({ ...q, items: JSON.parse(items_json) })));
+        res.json(rows.map((r) => { const { access_key, ...q } = parseQuote(r); return q; }));
     });
 
     admin.patch('/quotes/:id', (req, res) => {
         if (!QUOTE_STATUSES.includes(req.body.status)) throw httpError(400, 'الحالة غير صالحة');
         const info = db.prepare('UPDATE quotes SET status = ? WHERE id = ?').run(req.body.status, Number(req.params.id));
         if (!info.changes) throw httpError(404, 'العرض غير موجود');
-        const { items_json, ...q } = db.prepare('SELECT * FROM quotes WHERE id = ?').get(Number(req.params.id));
-        const quote = { ...q, items: JSON.parse(items_json) };
+        const { access_key, ...quote } = parseQuote(db.prepare('SELECT * FROM quotes WHERE id = ?').get(Number(req.params.id)));
         webhooks.emit(db, 'quote.status_changed', quote);
         res.json(quote);
+    });
+
+    admin.get('/quotes/:id/pdf', (req, res) => {
+        const row = db.prepare('SELECT * FROM quotes WHERE id = ?').get(Number(req.params.id));
+        if (!row) throw httpError(404, 'العرض غير موجود');
+        sendPdf(res, parseQuote(row), getSettings(db));
+    });
+
+    /* ---- Door packages (used by the AI agent) ---- */
+
+    admin.get('/door-packages', (req, res) => res.json(doors.describePackages(db)));
+
+    const parsePackage = (b) => {
+        if (!b.door_type || !String(b.door_type).trim()) throw httpError(400, 'نوع الباب مطلوب');
+        if (!b.name || !String(b.name).trim()) throw httpError(400, 'اسم الباقة مطلوب');
+        const slat = getProduct(b.slat_product_id);
+        if (!slat || slat.category !== 'slat') throw httpError(400, 'اختر منتج شرائح للباقة');
+        const area = (v) => (v === '' || v == null ? null : Number(v));
+        const items = (Array.isArray(b.items) ? b.items : []).map((i) => {
+            if (!getProduct(i.product_id)) throw httpError(400, 'منتج غير موجود في مكونات الباقة');
+            if (!['fixed', 'width', 'height', 'area'].includes(i.basis)) throw httpError(400, 'طريقة حساب الكمية غير صالحة');
+            const factor = Number(i.factor);
+            if (!Number.isFinite(factor) || factor <= 0) throw httpError(400, 'المعامل يجب أن يكون أكبر من صفر');
+            return { product_id: Number(i.product_id), basis: i.basis, factor, optional: i.optional ? 1 : 0 };
+        });
+        return {
+            door_type: String(b.door_type).trim(), name: String(b.name).trim(), description: b.description || null,
+            slat_product_id: slat.id, min_area: area(b.min_area), max_area: area(b.max_area),
+            sort_order: Number(b.sort_order) || 0, active: b.active === false ? 0 : 1, items
+        };
+    };
+
+    const writePackageItems = (packageId, items) => {
+        db.prepare('DELETE FROM door_package_items WHERE package_id = ?').run(packageId);
+        const insert = db.prepare(`INSERT INTO door_package_items (package_id, product_id, basis, factor, optional)
+                                   VALUES (?, ?, ?, ?, ?)`);
+        for (const i of items) insert.run(packageId, i.product_id, i.basis, i.factor, i.optional);
+    };
+
+    admin.post('/door-packages', (req, res) => {
+        const p = parsePackage(req.body || {});
+        const id = Number(db.prepare(`INSERT INTO door_packages (door_type, name, description, slat_product_id, min_area, max_area, sort_order, active)
+                                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+            .run(p.door_type, p.name, p.description, p.slat_product_id, p.min_area, p.max_area, p.sort_order, p.active).lastInsertRowid);
+        writePackageItems(id, p.items);
+        res.status(201).json(doors.describePackages(db).find((x) => x.id === id));
+    });
+
+    admin.put('/door-packages/:id', (req, res) => {
+        const id = Number(req.params.id);
+        if (!db.prepare('SELECT id FROM door_packages WHERE id = ?').get(id)) throw httpError(404, 'الباقة غير موجودة');
+        const p = parsePackage(req.body || {});
+        db.prepare(`UPDATE door_packages SET door_type = ?, name = ?, description = ?, slat_product_id = ?, min_area = ?,
+                    max_area = ?, sort_order = ?, active = ? WHERE id = ?`)
+            .run(p.door_type, p.name, p.description, p.slat_product_id, p.min_area, p.max_area, p.sort_order, p.active, id);
+        writePackageItems(id, p.items);
+        res.json(doors.describePackages(db).find((x) => x.id === id));
+    });
+
+    admin.delete('/door-packages/:id', (req, res) => {
+        db.prepare('DELETE FROM door_packages WHERE id = ?').run(Number(req.params.id));
+        res.status(204).end();
+    });
+
+    /* Try a size against all packages — the same numbers the agent will quote */
+    admin.get('/door-packages/preview', (req, res) => {
+        const q = { widthCm: req.query.width_cm, heightCm: req.query.height_cm, count: Number(req.query.count) || 1,
+            doorType: req.query.door_type || '', regionId: req.query.region_id || null };
+        res.json({ range: doors.priceRange(db, q), packages: doors.comparePackages(db, q) });
+    });
+
+    admin.get('/regions', (req, res) => res.json(db.prepare('SELECT * FROM regions ORDER BY governorate, name').all()));
+
+    admin.post('/regions', (req, res) => {
+        const name = String((req.body || {}).name || '').trim();
+        if (!name) throw httpError(400, 'اسم الولاية مطلوب');
+        const info = db.prepare('INSERT INTO regions (name, governorate) VALUES (?, ?)').run(name, req.body.governorate || null);
+        res.status(201).json(db.prepare('SELECT * FROM regions WHERE id = ?').get(info.lastInsertRowid));
+    });
+
+    admin.put('/regions/:id', (req, res) => {
+        const b = req.body || {};
+        const fee = (v) => {
+            if (v === '' || v == null) return null;
+            const n = Number(v);
+            if (!Number.isFinite(n) || n < 0) throw httpError(400, 'رسوم غير صالحة');
+            return n;
+        };
+        const info = db.prepare('UPDATE regions SET delivery_fee = ?, installation_fee = ?, active = ? WHERE id = ?')
+            .run(fee(b.delivery_fee), fee(b.installation_fee), b.active === false ? 0 : 1, Number(req.params.id));
+        if (!info.changes) throw httpError(404, 'الولاية غير موجودة');
+        res.json(db.prepare('SELECT * FROM regions WHERE id = ?').get(Number(req.params.id)));
+    });
+
+    /* ---- AI agent test console (same agent as WhatsApp) ---- */
+
+    admin.get('/agent/status', (req, res) => res.json({
+        configured: agent.isConfigured(),
+        model: process.env.AGENT_MODEL || 'claude-opus-5',
+        whatsapp_configured: whatsapp.isConfigured()
+    }));
+
+    admin.post('/agent/chat', asyncRoute(async (req, res) => {
+        if (!agent.isConfigured()) throw httpError(503, 'ANTHROPIC_API_KEY غير مضبوط على الخادم');
+        const session = String(req.body.session || 'default').slice(0, 40);
+        const message = String(req.body.message || '').trim();
+        if (!message) throw httpError(400, 'اكتب رسالة');
+        const result = await agent.chat({
+            db, key: 'test:' + session, channel: 'agent-test', phone: '96800000000', text: message,
+            createQuote: (q) => saveQuote(db, q),
+            notifyHuman: async () => {}
+        });
+        res.json({
+            reply: result.reply,
+            events: result.events.map((e) => (e.type === 'quote_created'
+                ? { type: e.type, ref: e.quote.ref, total: e.quote.total, pdf_url: e.quote.pdf_url }
+                : e))
+        });
+    }));
+
+    admin.post('/agent/reset', (req, res) => {
+        agent.resetConversation(db, 'test:' + String((req.body || {}).session || 'default').slice(0, 40));
+        res.status(204).end();
     });
 
     admin.get('/webhooks', (req, res) => {
@@ -351,7 +518,7 @@ function createApp(db) {
 
     app.use('/api/admin', admin);
 
-    whatsapp.registerRoutes(app, db);
+    whatsapp.registerRoutes(app, db, { saveQuote: (q) => saveQuote(db, q) });
     app.use(express.static(path.join(__dirname, '..', 'public')));
 
     app.use('/api', (req, res) => res.status(404).json({ error: 'غير موجود' }));
@@ -375,7 +542,8 @@ if (require.main === module) {
         console.log(`  • حاسبة العملاء:     http://localhost:${port}/calculator.html`);
         if (!process.env.ADMIN_TOKEN) console.warn('  ! ADMIN_TOKEN غير مضبوط — واجهة الإدارة مقفلة');
         console.log(`  • واتساب: ${whatsapp.isConfigured() ? 'مفعّل' : 'غير مفعّل'}`);
+        console.log(`  • المساعد الذكي: ${agent.isConfigured() ? 'مفعّل' : 'غير مفعّل (ANTHROPIC_API_KEY)'}`);
     });
 }
 
-module.exports = { createApp };
+module.exports = { createApp, saveQuote };
