@@ -218,6 +218,12 @@ function createApp(db) {
         res.json({
             company_name: settings.company_name,
             company_whatsapp: settings.company_whatsapp,
+            company_tagline: settings.company_tagline,
+            company_phone: settings.company_phone,
+            company_address: settings.company_address,
+            company_website: settings.company_website,
+            calculator_notice: settings.calculator_notice,
+            calculator_notes: settings.calculator_notes,
             vat_percent: settings.vat_percent,
             locations: doors.locations(db),
             ...doors.publicCatalog(db)

@@ -1265,7 +1265,14 @@
                         <label>صلاحية عرض السعر <span class="unit">(يوم)</span></label>
                         <input type="number" id="quoteValidity" min="1" step="1">
                     </div>
+                    <div class="form-group"><label>الشعار النصي <span class="unit">(تحت العنوان في صفحة العميل)</span></label><input type="text" id="companyTagline"></div>
+                    <div class="form-group"><label>رقم خدمة العملاء</label><input type="tel" id="companyPhone"></div>
+                    <div class="form-group"><label>الموقع (العنوان)</label><input type="text" id="companyAddress"></div>
+                    <div class="form-group"><label>الموقع الإلكتروني</label><input type="text" id="companyWebsite" placeholder="radma.co"></div>
+                    <div class="form-group" style="grid-column: 1 / -1;"><label>التنبيه الأحمر في صفحة العميل</label><input type="text" id="calculatorNotice"></div>
+                    <div class="form-group" style="grid-column: 1 / -1;"><label>ملاحظات أسفل الحاسبة <span class="unit">(كل سطر ملاحظة)</span></label><textarea id="calculatorNotes" rows="3"></textarea></div>
                 </div>
+                <p class="status-text">شعار الشركة في صفحة العميل هو الملف <code>public/images/logo.png</code> — استبدله بنفس الاسم لتغييره.</p>
                 <div class="db-actions">
                     <button class="btn btn-accent" onclick="saveSettingsToServer()">حفظ</button>
                 </div>
