@@ -230,36 +230,26 @@ const WILAYAT = {
     'الوسطى': ['هيماء', 'محوت', 'الدقم', 'الجازر']
 };
 
-/* Starter configurator. Omani slats use the real LME formula; everything
-   else has placeholder prices and texts for the owner to replace. */
-const SAMPLE_CONFIGURATOR = {
-    types: [
-        { name: 'الإيراني', description: 'شرائح ألمنيوم مستوردة من إيران، سماكة واحدة.',
-          variants: [{ label: 'قياسي', product: { name: 'شرائح إيرانية', type: 'قياسي', unit: 'm2', purchase_price: 6.5 } }],
-          colors: [['أبيض', '#f4f4f2'], ['بيج', '#d8c7a6'], ['رمادي', '#8c9197']] },
-        { name: 'التركي', description: 'شرائح ألمنيوم مستوردة من تركيا، سماكة واحدة.',
-          variants: [{ label: 'قياسي', product: { name: 'شرائح تركية', type: 'قياسي', unit: 'm2', purchase_price: 8 } }],
-          colors: [['أبيض', '#f4f4f2'], ['بيج', '#d8c7a6'], ['رمادي', '#8c9197']] },
-        { name: 'العماني Napco', description: 'شرائح ألمنيوم عُمانية الصنع، بسماكتين، ويمكن طلب اللون.',
-          variants: [{ label: '1.1 ملم', lme: 1.1 }, { label: '1.5 ملم', lme: 1.5 }],
-          colors: [['أبيض', '#f4f4f2'], ['بيج', '#d8c7a6'], ['رمادي', '#8c9197'], ['بني', '#6b4a33'], ['أسود', '#2b2b2b']] }
-    ],
-    groups: [
-        { name: 'المسارات الجانبية (Channels)', basis: 'height', factor: 2, unit: 'meter', prices: [0.9, 1.3, 1.8],
-          description: 'المجاري التي تنزلق فيها الشرائح على جانبي الفتحة.' },
-        { name: 'عمود محور الدوران', basis: 'width', factor: 1, unit: 'meter', prices: [2, 2.8, 3.6],
-          description: 'العمود الذي تلتف عليه الشرائح أعلى الفتحة.' },
-        { name: 'القواعد', basis: 'fixed', factor: 2, unit: 'piece', prices: [1.5, 2.5, 3.5],
-          description: 'القواعد التي تحمل عمود الدوران على الجانبين.' },
-        { name: 'المحرك', basis: 'fixed', factor: 1, unit: 'piece', prices: [30, 55, 90], allow_none: true, none_label: 'بدون محرك (يدوي)',
-          description: 'المحرك الكهربائي لفتح وإغلاق البوابة.' }
-    ]
-};
+/* Starter accessory groups (classes A/B/C) with placeholder prices and texts for
+   the owner to replace. The shutter types, their prices and the installation fees
+   come from the company site's calculator (src/radma-catalog.js). */
+const SAMPLE_ACCESSORIES = [
+    { name: 'المسارات الجانبية (Channels)', basis: 'height', factor: 2, unit: 'meter', prices: [0.9, 1.3, 1.8],
+      description: 'المجاري التي تنزلق فيها الشرائح على جانبي الفتحة.' },
+    { name: 'عمود محور الدوران', basis: 'width', factor: 1, unit: 'meter', prices: [2, 2.8, 3.6],
+      description: 'العمود الذي تلتف عليه الشرائح أعلى الفتحة.' },
+    { name: 'القواعد', basis: 'fixed', factor: 2, unit: 'piece', prices: [1.5, 2.5, 3.5],
+      description: 'القواعد التي تحمل عمود الدوران على الجانبين.' },
+    { name: 'المحرك', basis: 'fixed', factor: 1, unit: 'piece', prices: [30, 55, 90], allow_none: true, none_label: 'بدون محرك (يدوي)',
+      description: 'المحرك الكهربائي لفتح وإغلاق البوابة.' }
+];
 
 function seedConfigurator(db) {
+    if (process.env.SEED_SAMPLE === '0') return;
     const { n } = db.prepare('SELECT COUNT(*) AS n FROM shutter_types').get();
-    if (n > 0 || process.env.SEED_SAMPLE === '0') return;
+    if (n === 0) require('./radma-catalog').applyRadmaCatalog(db);
 
+    if (db.prepare('SELECT COUNT(*) AS n FROM accessory_groups').get().n > 0) return;
     const findOrCreate = (p, category) => {
         const row = db.prepare('SELECT id FROM products WHERE category = ? AND name = ? AND IFNULL(type, \'\') = ?')
             .get(category, p.name, p.type || '');
@@ -268,29 +258,7 @@ function seedConfigurator(db) {
                                   VALUES (?, ?, ?, ?, ?, 0, 'سعر تجريبي — عدّله')`)
             .run(category, p.name, p.type || null, p.unit, p.purchase_price).lastInsertRowid);
     };
-    const lmeSlat = (thickness) => {
-        const row = db.prepare(`SELECT id FROM products WHERE category = 'slat' AND pricing_mode = 'lme'
-                                AND thickness = ? AND painted = 1 ORDER BY id LIMIT 1`).get(thickness);
-        return row && row.id;
-    };
-
-    SAMPLE_CONFIGURATOR.types.forEach((t, i) => {
-        const typeId = db.prepare('INSERT INTO shutter_types (name, description, sort_order) VALUES (?, ?, ?)')
-            .run(t.name, t.description, i).lastInsertRowid;
-        t.variants.forEach((v, j) => {
-            const productId = v.lme ? lmeSlat(v.lme) : findOrCreate(v.product, 'slat');
-            if (productId) {
-                db.prepare('INSERT INTO shutter_variants (shutter_type_id, label, product_id, sort_order) VALUES (?, ?, ?, ?)')
-                    .run(typeId, v.label, productId, j);
-            }
-        });
-        t.colors.forEach(([name, hex], j) => {
-            db.prepare('INSERT INTO shutter_colors (shutter_type_id, name, hex, sort_order) VALUES (?, ?, ?, ?)')
-                .run(typeId, name, hex, j);
-        });
-    });
-
-    SAMPLE_CONFIGURATOR.groups.forEach((g, i) => {
+    SAMPLE_ACCESSORIES.forEach((g, i) => {
         const groupId = db.prepare(`INSERT INTO accessory_groups (name, description, basis, factor, allow_none, none_label, sort_order)
                                     VALUES (?, ?, ?, ?, ?, ?, ?)`)
             .run(g.name, g.description, g.basis, g.factor, g.allow_none ? 1 : 0, g.none_label || null, i).lastInsertRowid;
@@ -319,9 +287,17 @@ function seedRegions(db) {
 
 /* Additive migrations for databases created by earlier versions */
 function migrate(db) {
-    const cols = db.prepare('PRAGMA table_info(quotes)').all().map((c) => c.name);
-    if (!cols.includes('access_key')) db.exec('ALTER TABLE quotes ADD COLUMN access_key TEXT');
-    if (!cols.includes('details_json')) db.exec('ALTER TABLE quotes ADD COLUMN details_json TEXT');
+    const addColumns = (table, defs) => {
+        const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+        for (const [name, def] of Object.entries(defs)) {
+            if (!cols.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${def}`);
+        }
+    };
+    addColumns('quotes', { access_key: 'TEXT', details_json: 'TEXT' });
+    // Thickness/grade: its own description and the size allowance used for the slat area
+    addColumns('shutter_variants', { description: 'TEXT', width_add_cm: 'REAL NOT NULL DEFAULT 0', height_add_cm: 'REAL NOT NULL DEFAULT 0' });
+    // Colors can belong to one thickness (NULL = all), replace the price per m² and add a fixed fee
+    addColumns('shutter_colors', { variant_id: 'INTEGER', price_per_m2: 'REAL', fixed_fee: 'REAL NOT NULL DEFAULT 0' });
 }
 
 function openDatabase(file = process.env.DB_FILE || path.join(__dirname, '..', 'data', 'aluminum.db')) {
@@ -351,8 +327,8 @@ function openDatabase(file = process.env.DB_FILE || path.join(__dirname, '..', '
         }
     }
     migrate(db);
+    seedRegions(db);        // wilayat first: the catalog import sets their installation fees
     seedConfigurator(db);
-    seedRegions(db);
     return db;
 }
 

@@ -21,6 +21,12 @@ function loadCatalog(db, { includeInactive = false } = {}) {
         variants: variants.filter((v) => v.shutter_type_id === t.id && products.get(v.product_id)?.active),
         colors: colors.filter((c) => c.shutter_type_id === t.id)
     }));
+    for (const t of types) {
+        // Group colors by thickness (in thickness order), type-wide colors first
+        const pos = (c) => (c.variant_id == null ? -1 : t.variants.findIndex((v) => v.id === c.variant_id));
+        t.colors.sort((a, b) => pos(a) - pos(b) || a.sort_order - b.sort_order || a.id - b.id);
+        for (const v of t.variants) v.colors = colorsFor(t, v);
+    }
 
     const options = db.prepare(`SELECT * FROM accessory_options ${onlyActive} ORDER BY sort_order, id`).all();
     const groups = db.prepare(`SELECT * FROM accessory_groups ${onlyActive} ORDER BY sort_order, id`).all().map((g) => ({
@@ -31,13 +37,37 @@ function loadCatalog(db, { includeInactive = false } = {}) {
     return { settings, products, types, groups };
 }
 
+/* Colors offered with a thickness: its own colors plus the type-wide ones (variant_id NULL) */
+function colorsFor(type, variant) {
+    return type.colors.filter((c) => c.variant_id == null || c.variant_id === variant.id);
+}
+
 /* ------------------------------ Pricing ------------------------------ */
+
+/* Slat area: the opening plus the thickness's allowance (e.g. +20 cm width, +60 cm height) */
+function slatArea(variant, size) {
+    const w = size.w + (Number(variant.width_add_cm) || 0) / 100;
+    const h = size.h + (Number(variant.height_add_cm) || 0) / 100;
+    return w * h * size.count;
+}
 
 const basisValue = (basis, size) => ({ fixed: 1, width: size.w, height: size.h, area: size.area })[basis];
 
-function slatQuantity(product, size, settings) {
+/* The slat line for a thickness and color: a color may replace the price per m² */
+function slatLine(product, variant, color, size, settings) {
+    const area = slatArea(variant, size);
+    if (color && color.price_per_m2 != null) {
+        return { unit: 'm2', quantity: area, unitPrice: round2(Number(color.price_per_m2)) };
+    }
     // Slats sold per m² are counted by area; per meter they follow the 13 m / m² rule
-    return product.unit === 'm2' ? size.area * size.count : size.area * settings.sqm_to_linear * size.count;
+    const quantity = product.unit === 'm2' ? area : area * settings.sqm_to_linear;
+    return { unit: product.unit, quantity, unitPrice: unitSellPrice(product, settings) };
+}
+
+/* Everything a color adds on top of the slat line (per-m² surcharge, fixed paint fee) */
+function colorExtras(color, variant, size) {
+    if (!color) return 0;
+    return (Number(color.surcharge_per_m2) || 0) * slatArea(variant, size) + (Number(color.fixed_fee) || 0) * size.count;
 }
 
 const lineItem = (product, quantity, settings, overrides = {}) => {
@@ -79,8 +109,8 @@ function resolveChoice(catalog, { shutterTypeId, variantId, colorId, optionIds =
 
     let color = null;
     if (colorId) {
-        color = type.colors.find((c) => c.id === Number(colorId));
-        if (!color) throw err400('اللون غير متوفر لهذا النوع');
+        color = variant.colors.find((c) => c.id === Number(colorId));
+        if (!color) throw err400('اللون غير متوفر لهذه السماكة');
     }
 
     const ids = (optionIds || []).map(Number);
@@ -99,13 +129,18 @@ function priceChoice({ widthCm, heightCm, count = 1 }, choice, catalog, region) 
     const { type, variant, color, accessories } = choice;
 
     const slat = products.get(variant.product_id);
-    const items = [lineItem(slat, slatQuantity(slat, size, settings), settings, {
-        name: `شرائح ${type.name}`, type: [variant.label, color && color.name].filter(Boolean).join(' — ')
-    })];
+    const line = slatLine(slat, variant, color, size, settings);
+    const items = [{
+        product_id: slat.id, category: 'slat', name: `شرائح ${type.name}`,
+        type: [variant.label, color && color.name].filter(Boolean).join(' — '),
+        unit: line.unit, quantity: Math.round(line.quantity * 1000) / 1000,
+        unit_price: line.unitPrice, line_total: round2(line.unitPrice * line.quantity)
+    }];
     if (color && color.surcharge_per_m2 > 0) {
-        items.push(serviceItem('إضافة لون', color.name, round2(size.area * size.count), color.surcharge_per_m2));
-        items[items.length - 1].unit = 'm2';
+        const area = round2(slatArea(variant, size));
+        items.push({ ...serviceItem('إضافة لون', color.name, area, color.surcharge_per_m2), unit: 'm2' });
     }
+    if (color && color.fixed_fee > 0) items.push(serviceItem('رسوم الصبغ', color.name, size.count, color.fixed_fee));
     for (const { group, option } of accessories) {
         const product = products.get(option.product_id);
         items.push(lineItem(product, group.factor * basisValue(group.basis, size) * size.count, settings, {
@@ -130,6 +165,7 @@ function priceChoice({ widthCm, heightCm, count = 1 }, choice, catalog, region) 
         ...withTotals(items, settings),
         door: {
             width_cm: Number(widthCm), height_cm: Number(heightCm), count: size.count, area_m2: round2(size.area),
+            slat_area_m2: round2(slatArea(variant, size)),
             shutter_type: type.name, variant: variant.label, color: color ? color.name : null,
             accessories: accessories.map(({ group, option }) => ({ group: group.name, option: option.label })),
             region: region ? region.name : null, governorate: region ? region.governorate : null
@@ -145,14 +181,17 @@ function finalPrice(db, { widthCm, heightCm, count = 1, shutterTypeId, variantId
     return priceChoice({ widthCm, heightCm, count }, choice, catalog, getRegion(db, regionId));
 }
 
-/* Price of each individual choice for this size, so the cheapest/dearest can be picked */
+/* Cost (before VAT) of each thickness × color combination and of each accessory class, for this size */
 function optionCosts(catalog, type, size) {
     const { settings, products } = catalog;
-    const variants = type.variants.map((v) => {
+    const combos = [];
+    for (const v of type.variants) {
         const p = products.get(v.product_id);
-        return { variant: v, cost: unitSellPrice(p, settings) * slatQuantity(p, size, settings) };
-    });
-    const colors = type.colors.map((c) => ({ color: c, cost: c.surcharge_per_m2 * size.area * size.count }));
+        for (const c of v.colors.length ? v.colors : [null]) {
+            const line = slatLine(p, v, c, size, settings);
+            combos.push({ variant: v, color: c, cost: line.unitPrice * line.quantity + colorExtras(c, v, size) });
+        }
+    }
     const groups = catalog.groups.map((g) => ({
         group: g,
         options: g.options.map((o) => ({
@@ -160,7 +199,7 @@ function optionCosts(catalog, type, size) {
             cost: unitSellPrice(products.get(o.product_id), settings) * g.factor * basisValue(g.basis, size) * size.count
         }))
     }));
-    return { variants, colors, groups };
+    return { combos, groups };
 }
 
 const pick = (list, fn) => list.reduce((best, x) => (best === null || fn(x.cost, best.cost) ? x : best), null);
@@ -177,12 +216,11 @@ function priceRange(db, { widthCm, heightCm, count = 1, shutterTypeId = null, re
         const costs = optionCosts(catalog, type, size);
         const build = (cheapest) => {
             const cmp = cheapest ? (a, b) => a < b : (a, b) => a > b;
+            const combo = pick(costs.combos, cmp);
             const optionIds = costs.groups.map(({ group, options }) =>
                 (cheapest && group.allow_none) || !options.length ? null : pick(options, cmp).option.id).filter(Boolean);
-            const color = pick(costs.colors, cmp);
             const choice = resolveChoice(catalog, {
-                shutterTypeId: type.id, variantId: pick(costs.variants, cmp).variant.id,
-                colorId: color ? color.color.id : null, optionIds
+                shutterTypeId: type.id, variantId: combo.variant.id, colorId: combo.color ? combo.color.id : null, optionIds
             });
             return priceChoice({ widthCm, heightCm, count }, choice, catalog, region).total;
         };
@@ -196,7 +234,7 @@ function priceRange(db, { widthCm, heightCm, count = 1, shutterTypeId = null, re
     };
 }
 
-/* What each choice adds for this size (prices include VAT) — used to explain differences */
+/* What each choice costs for this size (prices include VAT) — used to explain differences */
 function compareOptions(db, { widthCm, heightCm, count = 1, shutterTypeId }) {
     const catalog = loadCatalog(db);
     const size = validateDoorSize(widthCm, heightCm, count);
@@ -206,8 +244,13 @@ function compareOptions(db, { widthCm, heightCm, count = 1, shutterTypeId }) {
     const costs = optionCosts(catalog, type, size);
     return {
         shutter_type: { id: type.id, name: type.name, description: type.description },
-        thickness_options: costs.variants.map(({ variant, cost }) => ({ variant_id: variant.id, label: variant.label, slats_price_with_vat: round2(cost * vat) })),
-        colors: costs.colors.map(({ color, cost }) => ({ color_id: color.id, name: color.name, adds_with_vat: round2(cost * vat) })),
+        thickness_options: type.variants.map((v) => ({
+            variant_id: v.id, label: v.label, details: v.description,
+            colors: costs.combos.filter((c) => c.variant.id === v.id).map((c) => ({
+                color_id: c.color ? c.color.id : null, name: c.color ? c.color.name : 'بدون اختيار لون',
+                slats_price_with_vat: round2(c.cost * vat)
+            }))
+        })),
         accessories: costs.groups.map(({ group, options }) => ({
             group: group.name,
             description: group.description,
@@ -268,8 +311,10 @@ function publicCatalog(db) {
     return {
         shutter_types: catalog.types.filter((t) => t.variants.length).map((t) => ({
             id: t.id, name: t.name, description: t.description, image_url: t.image_url,
-            variants: t.variants.map((v) => ({ id: v.id, label: v.label })),
-            colors: t.colors.map((c) => ({ id: c.id, name: c.name, hex: c.hex, surcharge_per_m2: c.surcharge_per_m2 }))
+            variants: t.variants.map((v) => ({
+                id: v.id, label: v.label, description: v.description,
+                colors: v.colors.map((c) => ({ id: c.id, name: c.name, hex: c.hex }))
+            }))
         })),
         accessory_groups: catalog.groups.filter((g) => g.options.length).map((g) => ({
             id: g.id, name: g.name, description: g.description, allow_none: Boolean(g.allow_none), none_label: g.none_label,

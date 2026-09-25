@@ -1085,6 +1085,12 @@
                     <span class="icon">T</span>
                     <span id="typeFormTitle">إضافة نوع بوابة</span>
                 </div>
+                <div class="range-box" style="margin-bottom: 16px;">
+                    استيراد أنواع وأسعار حاسبة الموقع (الإيراني، التركي، العماني NAPCO) مع أسعار التركيب لكل ولاية.
+                    <strong style="font-size: 0.9rem;">يستبدل الأنواع الحالية وأسعار التركيب.</strong>
+                    <button class="btn btn-outline btn-sm" style="margin-inline-start: 10px;" onclick="importRadmaCatalog()">استيراد أسعار ردما</button>
+                    <span id="importStatus" class="status-text"></span>
+                </div>
                 <input type="hidden" id="typeId">
                 <div class="form-grid">
                     <div class="form-group"><label>اسم النوع <span class="unit">(مثل الإيراني)</span></label><input type="text" id="typeName"></div>
@@ -1092,15 +1098,15 @@
                     <div class="form-group"><label>الترتيب</label><input type="number" id="typeSort" value="0"></div>
                     <div class="form-group" style="grid-column: 1 / -1;"><label>تفاصيل المنتج <span class="unit">(تظهر للعميل عند اختيار النوع)</span></label><input type="text" id="typeDesc"></div>
                 </div>
-                <p class="sub-heading">السماكات <span class="status-text">— سطر واحد إذا لم يكن للنوع سماكات مختلفة (لن يُسأل العميل عنها)</span></p>
+                <p class="sub-heading">السماكات / الدرجات <span class="status-text">— سطر واحد إذا لم يكن للنوع خيارات مختلفة (لن يُسأل العميل عنها). الزيادة تُضاف إلى مقاس الفتحة عند حساب مساحة الشرائح فقط.</span></p>
                 <div class="table-wrapper"><table>
-                    <thead><tr><th>الاسم الظاهر (مثل 1.1 ملم)</th><th>منتج الشرائح (يحدد السعر)</th><th></th></tr></thead>
+                    <thead><tr><th>الاسم الظاهر (مثل 1.1 ملم)</th><th>منتج الشرائح (يحدد السعر)</th><th>التفاصيل للعميل</th><th>زيادة العرض (سم)</th><th>زيادة الارتفاع (سم)</th><th></th></tr></thead>
                     <tbody id="variantRows"></tbody>
                 </table></div>
                 <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="addVariantRow()">+ سماكة</button>
-                <p class="sub-heading">الألوان <span class="status-text">— اتركها فارغة إذا لم يكن اللون قابلاً للاختيار</span></p>
+                <p class="sub-heading">الألوان <span class="status-text">— لكل لون السماكة التي يتوفر معها. «سعر م² خاص» يحل محل سعر الشرائح لهذا اللون، و«رسوم ثابتة» تُضاف لكل بوابة (مثل رسوم الصبغ).</span></p>
                 <div class="table-wrapper"><table>
-                    <thead><tr><th>اللون</th><th>العينة</th><th>إضافة على السعر (ر.ع لكل م²)</th><th></th></tr></thead>
+                    <thead><tr><th>اللون</th><th>العينة</th><th>السماكة</th><th>سعر م² خاص (اختياري)</th><th>رسوم ثابتة (ر.ع)</th><th></th></tr></thead>
                     <tbody id="colorRows"></tbody>
                 </table></div>
                 <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="addColorRow()">+ لون</button>
@@ -1167,7 +1173,7 @@
                 </div>
                 <div class="table-wrapper">
                     <table>
-                        <thead><tr><th>المحافظة</th><th>الولاية</th><th>التركيب لكل بوابة (ر.ع)</th><th>التوصيل (ر.ع)</th><th></th></tr></thead>
+                        <thead><tr><th>المحافظة</th><th>الولاية</th><th>مفعّلة</th><th>التركيب لكل بوابة (ر.ع)</th><th>التوصيل (ر.ع)</th><th></th></tr></thead>
                         <tbody id="regionsBody"></tbody>
                     </table>
                 </div>

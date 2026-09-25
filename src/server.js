@@ -440,18 +440,31 @@ function createApp(db) {
 
     const parseShutterType = (b) => {
         if (!text(b.name)) throw httpError(400, 'اسم نوع البوابة مطلوب');
+        const nonNegative = (v, label, nullable = false) => {
+            if (nullable && (v === '' || v == null)) return null;
+            const n = Number(v) || 0;
+            if (n < 0) throw httpError(400, `${label} لا يمكن أن يكون سالباً`);
+            return n;
+        };
         const variants = (b.variants || []).map((v) => {
-            if (!text(v.label)) throw httpError(400, 'اكتب اسم السماكة / النوع لكل شريحة');
+            if (!text(v.label)) throw httpError(400, 'اكتب اسم السماكة / الدرجة لكل شريحة');
             const product = getProduct(v.product_id);
             if (!product || product.category !== 'slat') throw httpError(400, 'اختر منتج شرائح لكل سماكة');
-            return { id: v.id, label: text(v.label, 80), product_id: product.id };
+            return {
+                id: v.id, label: text(v.label, 80), product_id: product.id, description: text(v.description),
+                width_add_cm: nonNegative(v.width_add_cm, 'زيادة العرض'), height_add_cm: nonNegative(v.height_add_cm, 'زيادة الارتفاع')
+            };
         });
         if (!variants.length) throw httpError(400, 'أضف سماكة واحدة على الأقل');
         const colors = (b.colors || []).map((c) => {
             if (!text(c.name)) throw httpError(400, 'اكتب اسم اللون');
-            const surcharge = Number(c.surcharge_per_m2) || 0;
-            if (surcharge < 0) throw httpError(400, 'إضافة اللون لا يمكن أن تكون سالبة');
-            return { id: c.id, name: text(c.name, 40), hex: /^#[0-9a-f]{6}$/i.test(c.hex || '') ? c.hex : null, surcharge_per_m2: surcharge };
+            const vi = c.variant_index === '' || c.variant_index == null ? null : Number(c.variant_index);
+            if (vi !== null && !(vi >= 0 && vi < variants.length)) throw httpError(400, 'سماكة اللون غير صحيحة');
+            return {
+                id: c.id, name: text(c.name, 40), hex: /^#[0-9a-f]{6}$/i.test(c.hex || '') ? c.hex : null, variant_index: vi,
+                price_per_m2: nonNegative(c.price_per_m2, 'سعر المتر المربع', true), fixed_fee: nonNegative(c.fixed_fee, 'رسوم الصبغ'),
+                surcharge_per_m2: nonNegative(c.surcharge_per_m2, 'إضافة اللون')
+            };
         });
         return {
             name: text(b.name, 80), description: text(b.description), image_url: text(b.image_url, 500),
@@ -460,8 +473,11 @@ function createApp(db) {
     };
 
     const saveShutterType = (id, t) => {
-        syncChildren('shutter_variants', 'shutter_type_id', id, t.variants, ['label', 'product_id']);
-        syncChildren('shutter_colors', 'shutter_type_id', id, t.colors, ['name', 'hex', 'surcharge_per_m2']);
+        syncChildren('shutter_variants', 'shutter_type_id', id, t.variants, ['label', 'product_id', 'description', 'width_add_cm', 'height_add_cm']);
+        // Colors point at a thickness by its row position in the form; resolve to the saved ids
+        const variantIds = db.prepare('SELECT id FROM shutter_variants WHERE shutter_type_id = ? ORDER BY sort_order, id').all(id).map((r) => r.id);
+        const colors = t.colors.map((c) => ({ ...c, variant_id: c.variant_index === null ? null : variantIds[c.variant_index] }));
+        syncChildren('shutter_colors', 'shutter_type_id', id, colors, ['name', 'hex', 'variant_id', 'price_per_m2', 'fixed_fee', 'surcharge_per_m2']);
     };
 
     admin.post('/shutter-types', (req, res) => {
@@ -551,6 +567,12 @@ function createApp(db) {
         });
     });
 
+    /* Replace shutter types and installation fees with the company site's catalog */
+    admin.post('/import/radma-catalog', (req, res) => {
+        require('./radma-catalog').applyRadmaCatalog(db);
+        res.json({ ok: true, shutter_types: db.prepare('SELECT COUNT(*) AS n FROM shutter_types').get().n });
+    });
+
     admin.get('/governorates', (req, res) => res.json(db.prepare('SELECT * FROM governorates ORDER BY sort_order, name').all()));
 
     admin.put('/governorates/:id', (req, res) => {
@@ -578,8 +600,14 @@ function createApp(db) {
             if (!Number.isFinite(n) || n < 0) throw httpError(400, 'رسوم غير صالحة');
             return n;
         };
+        const id = Number(req.params.id);
+        const current = db.prepare('SELECT * FROM regions WHERE id = ?').get(id);
+        if (!current) throw httpError(404, 'الولاية غير موجودة');
+        // Only fields that were sent change (saving fees must not re-enable a disabled wilayah)
         const info = db.prepare('UPDATE regions SET delivery_fee = ?, installation_fee = ?, active = ? WHERE id = ?')
-            .run(fee(b.delivery_fee), fee(b.installation_fee), b.active === false ? 0 : 1, Number(req.params.id));
+            .run(b.delivery_fee === undefined ? current.delivery_fee : fee(b.delivery_fee),
+                b.installation_fee === undefined ? current.installation_fee : fee(b.installation_fee),
+                b.active === undefined ? current.active : (b.active ? 1 : 0), id);
         if (!info.changes) throw httpError(404, 'الولاية غير موجودة');
         res.json(db.prepare('SELECT * FROM regions WHERE id = ?').get(Number(req.params.id)));
     });

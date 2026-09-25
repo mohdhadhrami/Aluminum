@@ -219,7 +219,7 @@
                     </div>
                     <div class="description" id="typeDescription"></div>
                     <div class="input-group" id="variantGroup" hidden>
-                        <label for="variant">السماكة:</label>
+                        <label for="variant">السماكة / الدرجة:</label>
                         <select id="variant"></select>
                     </div>
                     <div class="input-group" id="colorGroup" hidden>
@@ -315,7 +315,7 @@
         $('type').innerHTML = '<option value="">اختر النوع</option>' +
             conf.shutter_types.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
         $('type').addEventListener('change', () => { renderTypeDetails(); invalidate(); });
-        $('variant').addEventListener('change', invalidate);
+        $('variant').addEventListener('change', () => { renderVariantDetails(); invalidate(); });
         $('color').addEventListener('change', () => { renderColorDot(); invalidate(); });
         for (const id of ['width', 'height', 'count']) $(id).addEventListener('input', invalidate);
     }
@@ -343,21 +343,37 @@
         $('year').textContent = new Date().getFullYear();
     }
 
+    const currentVariant = () => {
+        const t = currentType();
+        if (!t) return null;
+        return t.variants.length === 1 ? t.variants[0] : t.variants.find((v) => v.id === Number($('variant').value)) || null;
+    };
+
     function renderTypeDetails() {
         const t = currentType();
         $('typeDescription').textContent = t ? t.description || '' : '';
         $('variantGroup').hidden = !t || t.variants.length < 2;
-        $('variant').innerHTML = t ? (t.variants.length > 1 ? '<option value="">اختر السماكة</option>' : '') +
+        $('variant').innerHTML = t ? (t.variants.length > 1 ? '<option value="">اختر</option>' : '') +
             t.variants.map((v) => `<option value="${v.id}">${esc(v.label)}</option>`).join('') : '';
-        $('colorGroup').hidden = !t || !t.colors.length;
-        $('color').innerHTML = t && t.colors.length ? '<option value="">اختر اللون</option>' +
-            t.colors.map((c) => `<option value="${c.id}">${esc(c.name)}${c.surcharge_per_m2 > 0 ? ` (+${money(c.surcharge_per_m2)} ر.ع لكل م²)` : ''}</option>`).join('') : '';
+        renderVariantDetails();
+    }
+
+    /* Colors depend on the chosen thickness/grade (type → thickness → color) */
+    function renderVariantDetails() {
+        const t = currentType();
+        const v = currentVariant();
+        const desc = v && v.description ? v.description : (t ? t.description || '' : '');
+        $('typeDescription').textContent = desc;
+        const colors = v ? v.colors : [];
+        $('colorGroup').hidden = !colors.length;
+        $('color').innerHTML = colors.length ? '<option value="">اختر اللون</option>' +
+            colors.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('') : '';
         renderColorDot();
     }
 
     function renderColorDot() {
-        const t = currentType();
-        const c = t && t.colors.find((x) => x.id === Number($('color').value));
+        const v = currentVariant();
+        const c = v && v.colors.find((x) => x.id === Number($('color').value));
         $('colorDot').hidden = !c;
         if (c) $('colorDot').style.background = c.hex || '#ccc';
     }
@@ -398,8 +414,9 @@
         if (!region) return 'يرجى اختيار المحافظة والولاية.';
         if (!sizeValid()) return 'يرجى إدخال العرض (50–1500 سم) والارتفاع (50–1000 سم).';
         if (!t) return 'يرجى اختيار نوع البوابة.';
-        if (t.variants.length > 1 && !$('variant').value) return 'يرجى اختيار السماكة.';
-        if (t.colors.length && !$('color').value) return 'يرجى اختيار اللون.';
+        const v = currentVariant();
+        if (!v) return 'يرجى اختيار السماكة / الدرجة.';
+        if (v.colors.length && !$('color').value) return 'يرجى اختيار اللون.';
         const g = conf.accessory_groups.find((x) => !$('acc' + x.id).value);
         if (g) return 'يرجى اختيار فئة ' + g.name + '.';
         return null;
@@ -411,7 +428,7 @@
         return {
             width_cm: s.width, height_cm: s.height, count: s.count,
             shutter_type_id: t ? t.id : null,
-            variant_id: Number($('variant').value) || (t && t.variants.length === 1 ? t.variants[0].id : null),
+            variant_id: currentVariant() ? currentVariant().id : null,
             color_id: Number($('color').value) || null,
             option_ids: conf.accessory_groups.map((g) => Number($('acc' + g.id).value)).filter(Boolean),
             region_id: region ? region.id : null
