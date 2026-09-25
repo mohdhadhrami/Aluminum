@@ -19,63 +19,98 @@ function fakeClient(script) {
 const toolUse = (id, name, input) => ({ type: 'tool_use', id, name, input });
 const text = (t) => ({ type: 'text', text: t });
 
-test('door price range covers cheapest to dearest package, and final price adds chosen extras', () => {
+const omani = (db) => doors.publicCatalog(db).shutter_types.find((t) => t.name.includes('العماني'));
+const size = { widthCm: 300, heightCm: 250, count: 1 };
+
+test('wilayat list follows the governorate, and disabled governorates disappear', () => {
     const db = openDatabase(':memory:');
-    const [seeb] = doors.findRegions(db, 'السيب');
-    assert.strictEqual(seeb.name, 'السيب');
-    db.prepare('UPDATE regions SET delivery_fee = 10, installation_fee = 15 WHERE id = ?').run(seeb.id);
+    const dakhiliyah = doors.locations(db).find((g) => g.name === 'الداخلية');
+    assert.ok(dakhiliyah.wilayat.some((w) => w.name === 'نزوى'));
+    assert.ok(dakhiliyah.wilayat.every((w) => !['صحار', 'مسقط'].includes(w.name)));
 
-    const size = { widthCm: 300, heightCm: 250, count: 1 };
-    const range = doors.priceRange(db, { ...size, doorType: 'كهربائي', regionId: seeb.id });
-    assert.ok(range.available);
+    db.prepare("UPDATE governorates SET active = 0 WHERE name = 'الداخلية'").run();
+    assert.strictEqual(doors.locations(db).some((g) => g.name === 'الداخلية'), false);
+    const [nizwa] = db.prepare("SELECT * FROM regions WHERE name = 'نزوى'").all();
+    assert.strictEqual(doors.getRegion(db, nizwa.id), null); // cannot be quoted either
+});
+
+test('door price: thickness, class per accessory group and installation by wilayah', () => {
+    const db = openDatabase(':memory:');
+    const [nizwa] = doors.findRegions(db, 'نزوى');
+    db.prepare('UPDATE regions SET installation_fee = 20 WHERE id = ?').run(nizwa.id);
+    const type = omani(db);
+    const cmp = doors.compareOptions(db, { ...size, shutterTypeId: type.id });
+    assert.strictEqual(cmp.thickness_options.length, 2); // 1.1 and 1.5 mm
+
+    const classB = cmp.accessories.map((g) => g.classes[1].option_id);
+    const priced = doors.finalPrice(db, { ...size, shutterTypeId: type.id, variantId: cmp.thickness_options[1].variant_id,
+        colorId: type.colors[0].id, optionIds: classB, regionId: nizwa.id });
+    assert.strictEqual(priced.items[0].quantity, 97.5); // 3 m × 2.5 m × 13 m per m²
+    assert.ok(priced.items.some((i) => i.name === 'التركيب' && i.line_total === 20));
+    assert.ok(priced.spec.some(([k, v]) => k === 'اللون' && v === type.colors[0].name));
+    assert.strictEqual(priced.delivery_installation, 'شامل التركيب');
+
+    // Every accessory class choice changes the price by exactly the compared amount
+    const classA = cmp.accessories.map((g) => g.classes[0].option_id);
+    const cheaper = doors.finalPrice(db, { ...size, shutterTypeId: type.id, variantId: cmp.thickness_options[1].variant_id,
+        colorId: type.colors[0].id, optionIds: classA, regionId: nizwa.id });
+    const expected = cmp.accessories.reduce((s, g) => s + g.classes[1].price_with_vat - g.classes[0].price_with_vat, 0);
+    assert.ok(Math.abs(priced.total - cheaper.total - expected) < 0.05);
+
+    // A required group cannot be skipped; the motor group can ("بدون محرك")
+    const withoutChannels = classB.slice(1);
+    assert.throws(() => doors.finalPrice(db, { ...size, shutterTypeId: type.id, variantId: cmp.thickness_options[0].variant_id, optionIds: withoutChannels }), /اختر نوع/);
+    const withoutMotor = classB.slice(0, -1);
+    assert.ok(doors.finalPrice(db, { ...size, shutterTypeId: type.id, variantId: cmp.thickness_options[0].variant_id, optionIds: withoutMotor }).total > 0);
+});
+
+test('price range spans the cheapest to the dearest configuration', () => {
+    const db = openDatabase(':memory:');
+    const type = omani(db);
+    const range = doors.priceRange(db, { ...size, shutterTypeId: type.id });
+    const cmp = doors.compareOptions(db, { ...size, shutterTypeId: type.id });
+    const dearest = doors.finalPrice(db, { ...size, shutterTypeId: type.id, variantId: cmp.thickness_options[1].variant_id,
+        colorId: type.colors[0].id, optionIds: cmp.accessories.map((g) => g.classes[2].option_id) });
     assert.ok(range.from < range.to);
-    assert.strictEqual(range.delivery_installation, 'شاملة التوصيل والتركيب');
-
-    const [pkg] = doors.comparePackages(db, { ...size, doorType: 'كهربائي', regionId: seeb.id });
-    const extra = pkg.optional_extras[0];
-    const base = doors.finalPrice(db, { ...size, packageId: pkg.package_id, regionId: seeb.id });
-    const withExtra = doors.finalPrice(db, { ...size, packageId: pkg.package_id, optionalItemIds: [extra.optional_item_id], regionId: seeb.id });
-    assert.strictEqual(base.total, pkg.base_price_with_vat);
-    assert.ok(Math.abs(withExtra.total - base.total - extra.adds_with_vat) < 0.02);
-    assert.ok(base.items.some((i) => i.name === 'توصيل' && i.line_total === 10));
-    assert.strictEqual(base.items[0].quantity, 97.5); // 3 m × 2.5 m × 13
-
-    // Too large for every electric package's max area → no quote, not a guess
-    assert.strictEqual(doors.priceRange(db, { widthCm: 1000, heightCm: 900, count: 1, doorType: 'كهربائي' }).available, false);
+    assert.strictEqual(range.to, dearest.total);
+    assert.strictEqual(doors.priceRange(db, size).by_type.length, 3); // all types when none chosen
 });
 
 test('agent runs tools, prices from the database and creates a quote with a PDF', async (t) => {
     const db = openDatabase(':memory:');
-    const [pkg] = doors.comparePackages(db, { widthCm: 300, heightCm: 250, count: 1, doorType: 'كهربائي', regionId: null });
+    const type = omani(db);
+    const cmp = doors.compareOptions(db, { ...size, shutterTypeId: type.id });
+    const choice = {
+        width_cm: 300, height_cm: 250, door_count: 1, shutter_type_id: type.id, variant_id: cmp.thickness_options[0].variant_id,
+        color_id: type.colors[1].id, option_ids: cmp.accessories.map((g) => g.classes[0].option_id), region_id: null
+    };
 
     const client = fakeClient([
-        () => ({ stop_reason: 'tool_use', content: [toolUse('t1', 'get_price_range', { width_cm: 300, height_cm: 250, door_count: 1, door_type: 'كهربائي', region_id: null })] }),
+        () => ({ stop_reason: 'tool_use', content: [toolUse('t1', 'get_price_range', { width_cm: 300, height_cm: 250, door_count: 1, shutter_type_id: type.id, region_id: null })] }),
         (params) => {
             const result = JSON.parse(params.messages.at(-1).content[0].content);
             return { stop_reason: 'end_turn', content: [text(`السعر من ${result.from} إلى ${result.to} ر.ع`)] };
         },
-        () => ({ stop_reason: 'tool_use', content: [toolUse('t2', 'create_quote', {
-            width_cm: 300, height_cm: 250, door_count: 1, package_id: pkg.package_id, optional_item_ids: [],
-            region_id: null, customer_name: 'سالم', notes: null
-        })] }),
+        () => ({ stop_reason: 'tool_use', content: [toolUse('t2', 'create_quote', { ...choice, customer_name: 'سالم', notes: null })] }),
         () => ({ stop_reason: 'end_turn', content: [text('تم تجهيز عرض السعر')] })
     ]);
 
     const ctx = { db, key: 'wa:96891234567', channel: 'whatsapp', phone: '96891234567', createQuote: (q) => saveQuote(db, q), notifyHuman: async () => {}, client };
-    const first = await agent.chat({ ...ctx, text: 'أبغى باب رول شتر كهربائي 300 في 250' });
-    const range = doors.priceRange(db, { widthCm: 300, heightCm: 250, count: 1, doorType: 'كهربائي' });
+    const first = await agent.chat({ ...ctx, text: 'أبغى بوابة شتر عماني 300 في 250' });
+    const range = doors.priceRange(db, { ...size, shutterTypeId: type.id });
     assert.strictEqual(first.reply, `السعر من ${range.from} إلى ${range.to} ر.ع`);
 
     const second = await agent.chat({ ...ctx, text: 'اسمي سالم، أرسل العرض' });
     assert.strictEqual(second.events[0].type, 'quote_created');
     const quote = second.events[0].quote;
-    assert.strictEqual(quote.total, pkg.base_price_with_vat);
+    const expected = doors.finalPrice(db, { ...size, shutterTypeId: type.id, variantId: choice.variant_id, colorId: choice.color_id, optionIds: choice.option_ids });
+    assert.strictEqual(quote.total, expected.total);
     assert.strictEqual(quote.source, 'whatsapp');
-    assert.strictEqual(quote.details.width_cm, 300);
+    assert.ok(quote.details.spec.some(([k]) => k === 'نوع البوابة'));
 
     // Conversation history persisted and replayed (append-only) on the second message
     const secondCall = client.calls[2];
-    assert.strictEqual(secondCall.messages[0].content, 'أبغى باب رول شتر كهربائي 300 في 250');
+    assert.strictEqual(secondCall.messages[0].content, 'أبغى بوابة شتر عماني 300 في 250');
     assert.strictEqual(secondCall.messages.at(-1).content, 'اسمي سالم، أرسل العرض');
     assert.ok(secondCall.tools.every((tool) => tool.strict === true));
 
@@ -87,14 +122,43 @@ test('agent runs tools, prices from the database and creates a quote with a PDF'
     const pdf = await fetch(base + quote.pdf_url);
     assert.strictEqual(pdf.status, 200);
     assert.strictEqual(pdf.headers.get('content-type'), 'application/pdf');
-    assert.strictEqual((await pdf.arrayBuffer()).byteLength > 5000, true);
+    assert.ok((await pdf.arrayBuffer()).byteLength > 5000);
     assert.strictEqual((await fetch(`${base}/quotes/${quote.ref}.pdf?k=wrong`)).status, 404);
+});
+
+test('public door quote requires name, mobile and wilayah, and prices on the server', async (t) => {
+    const db = openDatabase(':memory:');
+    const server = http.createServer(createApp(db));
+    await new Promise((r) => server.listen(0, r));
+    t.after(() => server.close());
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const post = (url, body) => fetch(base + url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+    const conf = await (await fetch(base + '/api/public/configurator')).json();
+    const type = conf.shutter_types.find((x) => x.variants.length === 1); // Iranian: no thickness choice
+    const door = { width_cm: 300, height_cm: 250, count: 1, shutter_type_id: type.id, color_id: type.colors[0].id,
+        option_ids: conf.accessory_groups.map((g) => g.options[0].id) };
+    assert.ok(!JSON.stringify(conf).includes('purchase_price'));
+
+    const live = await (await post('/api/public/door-price', door)).json();
+    assert.ok(live.total > 0);
+
+    const noRegion = await post('/api/public/door-quotes', { ...door, customer_name: 'أحمد', customer_phone: '99123456' });
+    assert.strictEqual(noRegion.status, 400);
+
+    const wilayah = conf.locations[0].wilayat[0];
+    const ok = await post('/api/public/door-quotes', { ...door, customer_name: 'أحمد', customer_phone: '99123456', region_id: wilayah.id });
+    const quote = await ok.json();
+    assert.strictEqual(ok.status, 201);
+    assert.strictEqual(quote.total, live.total); // no installation fee set yet for this wilayah
+    assert.match(quote.customer_city, new RegExp(wilayah.name));
+    assert.ok(!('access_key' in quote));
 });
 
 test('tool errors are returned to the model instead of crashing the conversation', async () => {
     const db = openDatabase(':memory:');
     const client = fakeClient([
-        () => ({ stop_reason: 'tool_use', content: [toolUse('t1', 'get_price_range', { width_cm: 5, height_cm: 250, door_count: 1, door_type: 'يدوي', region_id: null })] }),
+        () => ({ stop_reason: 'tool_use', content: [toolUse('t1', 'get_price_range', { width_cm: 5, height_cm: 250, door_count: 1, shutter_type_id: null, region_id: null })] }),
         (params) => {
             const r = params.messages.at(-1).content[0];
             assert.strictEqual(r.is_error, true);

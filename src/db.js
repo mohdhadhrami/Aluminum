@@ -113,27 +113,65 @@ CREATE INDEX IF NOT EXISTS idx_purchases_product ON purchases(product_id);
 CREATE INDEX IF NOT EXISTS idx_history_product ON price_history(product_id);
 CREATE INDEX IF NOT EXISTS idx_quotes_created ON quotes(created_at);
 
--- A complete roller-shutter door: one slat product + accessories whose
--- quantities follow the door size. door_type groups packages ("يدوي", "كهربائي").
-CREATE TABLE IF NOT EXISTS door_packages (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    door_type        TEXT NOT NULL,
-    name             TEXT NOT NULL,
-    description      TEXT,
-    slat_product_id  INTEGER NOT NULL REFERENCES products(id),
-    min_area         REAL,
-    max_area         REAL,
-    sort_order       INTEGER NOT NULL DEFAULT 0,
-    active           INTEGER NOT NULL DEFAULT 1
+-- ===== Roller-shutter door configurator (customer calculator + AI agent) =====
+-- Shutter type (e.g. Iranian / Turkish / Omani) → variants (thickness) and colors
+CREATE TABLE IF NOT EXISTS shutter_types (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL,
+    description  TEXT,
+    image_url    TEXT,
+    sort_order   INTEGER NOT NULL DEFAULT 0,
+    active       INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE TABLE IF NOT EXISTS door_package_items (
+CREATE TABLE IF NOT EXISTS shutter_variants (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    shutter_type_id  INTEGER NOT NULL REFERENCES shutter_types(id) ON DELETE CASCADE,
+    label            TEXT NOT NULL,
+    product_id       INTEGER NOT NULL REFERENCES products(id),
+    sort_order       INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS shutter_colors (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    shutter_type_id   INTEGER NOT NULL REFERENCES shutter_types(id) ON DELETE CASCADE,
+    name              TEXT NOT NULL,
+    hex               TEXT,
+    surcharge_per_m2  REAL NOT NULL DEFAULT 0,
+    sort_order        INTEGER NOT NULL DEFAULT 0
+);
+
+-- Accessory groups (channels, axle, bases, motor…) each offering classes A/B/C.
+-- Quantity per door = factor × (1 | width m | height m | area m²)
+CREATE TABLE IF NOT EXISTS accessory_groups (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL,
+    description  TEXT,
+    basis        TEXT NOT NULL DEFAULT 'fixed' CHECK (basis IN ('fixed', 'width', 'height', 'area')),
+    factor       REAL NOT NULL DEFAULT 1,
+    allow_none   INTEGER NOT NULL DEFAULT 0,
+    none_label   TEXT,
+    sort_order   INTEGER NOT NULL DEFAULT 0,
+    active       INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS accessory_options (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    package_id  INTEGER NOT NULL REFERENCES door_packages(id) ON DELETE CASCADE,
-    product_id  INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    basis       TEXT NOT NULL DEFAULT 'fixed' CHECK (basis IN ('fixed', 'width', 'height', 'area')),
-    factor      REAL NOT NULL DEFAULT 1,
-    optional    INTEGER NOT NULL DEFAULT 0
+    group_id    INTEGER NOT NULL REFERENCES accessory_groups(id) ON DELETE CASCADE,
+    label       TEXT NOT NULL,
+    product_id  INTEGER NOT NULL REFERENCES products(id),
+    details     TEXT,
+    image_url   TEXT,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    active      INTEGER NOT NULL DEFAULT 1
+);
+
+-- Governorates the admin enables for the customer form
+CREATE TABLE IF NOT EXISTS governorates (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL UNIQUE,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    active      INTEGER NOT NULL DEFAULT 1
 );
 
 -- Wilayat with delivery / installation fees (NULL = decided after site visit)
@@ -185,68 +223,91 @@ const WILAYAT = {
     'الوسطى': ['هيماء', 'محوت', 'الدقم', 'الجازر']
 };
 
-/* Extra accessories the sample door packages need (hidden, placeholder prices) */
-const DOOR_SAMPLE_PRODUCTS = [
-    { key: 'guide', category: 'accessory', name: 'مجرى جانبي', type: 'ألمنيوم', unit: 'meter', purchase_price: 1.2 },
-    { key: 'axle', category: 'accessory', name: 'عمود (محور)', type: 'حديد مجلفن', unit: 'meter', purchase_price: 2.5 },
-    { key: 'lock', category: 'accessory', name: 'قفل', type: 'قفل أرضي', unit: 'piece', purchase_price: 1.5 },
-    { key: 'bottom', category: 'accessory', name: 'قاطع سفلي', type: 'ألمنيوم مع مطاط', unit: 'meter', purchase_price: 1.8 },
-    { key: 'spring', category: 'accessory', name: 'نابض (سوستة)', type: 'للأبواب اليدوية', unit: 'piece', purchase_price: 4 },
-    { key: 'remote', category: 'accessory', name: 'ريموت إضافي', type: 'لاسلكي', unit: 'piece', purchase_price: 5 },
-    { key: 'ups', category: 'accessory', name: 'بطارية احتياطية', type: 'تشغيل عند انقطاع الكهرباء', unit: 'piece', purchase_price: 45 },
-    { key: 'tubular', category: 'machine', name: 'موتور أنبوبي', type: '50 نيوتن', unit: 'piece', purchase_price: 35 },
-    { key: 'side', category: 'machine', name: 'موتور جانبي', type: '600 كجم', unit: 'piece', purchase_price: 90 }
-];
+/* Starter configurator. Omani slats use the real LME formula; everything
+   else has placeholder prices and texts for the owner to replace. */
+const SAMPLE_CONFIGURATOR = {
+    types: [
+        { name: 'الإيراني', description: 'شرائح ألمنيوم مستوردة من إيران، سماكة واحدة.',
+          variants: [{ label: 'قياسي', product: { name: 'شرائح إيرانية', type: 'قياسي', unit: 'm2', purchase_price: 6.5 } }],
+          colors: [['أبيض', '#f4f4f2'], ['بيج', '#d8c7a6'], ['رمادي', '#8c9197']] },
+        { name: 'التركي', description: 'شرائح ألمنيوم مستوردة من تركيا، سماكة واحدة.',
+          variants: [{ label: 'قياسي', product: { name: 'شرائح تركية', type: 'قياسي', unit: 'm2', purchase_price: 8 } }],
+          colors: [['أبيض', '#f4f4f2'], ['بيج', '#d8c7a6'], ['رمادي', '#8c9197']] },
+        { name: 'العماني Napco', description: 'شرائح ألمنيوم عُمانية الصنع، بسماكتين، ويمكن طلب اللون.',
+          variants: [{ label: '1.1 ملم', lme: 1.1 }, { label: '1.5 ملم', lme: 1.5 }],
+          colors: [['أبيض', '#f4f4f2'], ['بيج', '#d8c7a6'], ['رمادي', '#8c9197'], ['بني', '#6b4a33'], ['أسود', '#2b2b2b']] }
+    ],
+    groups: [
+        { name: 'المسارات الجانبية (Channels)', basis: 'height', factor: 2, unit: 'meter', prices: [0.9, 1.3, 1.8],
+          description: 'المجاري التي تنزلق فيها الشرائح على جانبي الفتحة.' },
+        { name: 'عمود محور الدوران', basis: 'width', factor: 1, unit: 'meter', prices: [2, 2.8, 3.6],
+          description: 'العمود الذي تلتف عليه الشرائح أعلى الفتحة.' },
+        { name: 'القواعد', basis: 'fixed', factor: 2, unit: 'piece', prices: [1.5, 2.5, 3.5],
+          description: 'القواعد التي تحمل عمود الدوران على الجانبين.' },
+        { name: 'المحرك', basis: 'fixed', factor: 1, unit: 'piece', prices: [30, 55, 90], allow_none: true, none_label: 'بدون محرك (يدوي)',
+          description: 'المحرك الكهربائي لفتح وإغلاق البوابة.' }
+    ]
+};
 
-const DOOR_SAMPLE_PACKAGES = [
-    { door_type: 'يدوي', name: 'يدوي اقتصادي', slat: [1.1, 0], max_area: 12, description: 'شرائح 1.1 ملم بدون صبغ مع نوابض وقفل',
-      items: [['guide', 'height', 2], ['axle', 'width', 1], ['bottom', 'width', 1], ['spring', 'fixed', 2], ['lock', 'fixed', 1]] },
-    { door_type: 'يدوي', name: 'يدوي قياسي', slat: [1.1, 1], max_area: 12, description: 'شرائح 1.1 ملم مصبوغة مع نوابض وقفل',
-      items: [['guide', 'height', 2], ['axle', 'width', 1], ['bottom', 'width', 1], ['spring', 'fixed', 2], ['lock', 'fixed', 1]] },
-    { door_type: 'كهربائي', name: 'كهربائي قياسي', slat: [1.1, 1], max_area: 12, description: 'شرائح 1.1 ملم مصبوغة مع موتور أنبوبي وريموت',
-      items: [['guide', 'height', 2], ['axle', 'width', 1], ['bottom', 'width', 1], ['tubular', 'fixed', 1], ['remote', 'fixed', 1, 1], ['ups', 'fixed', 1, 1]] },
-    { door_type: 'كهربائي', name: 'كهربائي ممتاز', slat: [1.5, 1], max_area: 30, description: 'شرائح 1.5 ملم مصبوغة مع موتور جانبي قوي للأبواب الكبيرة',
-      items: [['guide', 'height', 2], ['axle', 'width', 1], ['bottom', 'width', 1], ['side', 'fixed', 1], ['remote', 'fixed', 1, 1], ['ups', 'fixed', 1, 1]] }
-];
-
-function seedDoors(db) {
-    const { n } = db.prepare('SELECT COUNT(*) AS n FROM door_packages').get();
+function seedConfigurator(db) {
+    const { n } = db.prepare('SELECT COUNT(*) AS n FROM shutter_types').get();
     if (n > 0 || process.env.SEED_SAMPLE === '0') return;
 
-    const findOrCreate = (p) => {
+    const findOrCreate = (p, category) => {
         const row = db.prepare('SELECT id FROM products WHERE category = ? AND name = ? AND IFNULL(type, \'\') = ?')
-            .get(p.category, p.name, p.type || '');
+            .get(category, p.name, p.type || '');
         if (row) return row.id;
         return Number(db.prepare(`INSERT INTO products (category, name, type, unit, purchase_price, is_public, notes)
                                   VALUES (?, ?, ?, ?, ?, 0, 'سعر تجريبي — عدّله')`)
-            .run(p.category, p.name, p.type, p.unit, p.purchase_price).lastInsertRowid);
+            .run(category, p.name, p.type || null, p.unit, p.purchase_price).lastInsertRowid);
     };
-    const ids = Object.fromEntries(DOOR_SAMPLE_PRODUCTS.map((p) => [p.key, findOrCreate(p)]));
-    const slatId = (thickness, painted) => {
+    const lmeSlat = (thickness) => {
         const row = db.prepare(`SELECT id FROM products WHERE category = 'slat' AND pricing_mode = 'lme'
-                                AND thickness = ? AND painted = ? ORDER BY id LIMIT 1`).get(thickness, painted);
+                                AND thickness = ? AND painted = 1 ORDER BY id LIMIT 1`).get(thickness);
         return row && row.id;
     };
 
-    const insertPkg = db.prepare(`INSERT INTO door_packages (door_type, name, description, slat_product_id, max_area, sort_order)
-                                  VALUES (?, ?, ?, ?, ?, ?)`);
-    const insertItem = db.prepare(`INSERT INTO door_package_items (package_id, product_id, basis, factor, optional)
-                                   VALUES (?, ?, ?, ?, ?)`);
-    DOOR_SAMPLE_PACKAGES.forEach((pkg, i) => {
-        const slat = slatId(...pkg.slat);
-        if (!slat) return;
-        const pkgId = insertPkg.run(pkg.door_type, pkg.name, pkg.description, slat, pkg.max_area, i).lastInsertRowid;
-        for (const [key, basis, factor, optional] of pkg.items) {
-            insertItem.run(pkgId, ids[key], basis, factor, optional || 0);
-        }
+    SAMPLE_CONFIGURATOR.types.forEach((t, i) => {
+        const typeId = db.prepare('INSERT INTO shutter_types (name, description, sort_order) VALUES (?, ?, ?)')
+            .run(t.name, t.description, i).lastInsertRowid;
+        t.variants.forEach((v, j) => {
+            const productId = v.lme ? lmeSlat(v.lme) : findOrCreate(v.product, 'slat');
+            if (productId) {
+                db.prepare('INSERT INTO shutter_variants (shutter_type_id, label, product_id, sort_order) VALUES (?, ?, ?, ?)')
+                    .run(typeId, v.label, productId, j);
+            }
+        });
+        t.colors.forEach(([name, hex], j) => {
+            db.prepare('INSERT INTO shutter_colors (shutter_type_id, name, hex, sort_order) VALUES (?, ?, ?, ?)')
+                .run(typeId, name, hex, j);
+        });
+    });
+
+    SAMPLE_CONFIGURATOR.groups.forEach((g, i) => {
+        const groupId = db.prepare(`INSERT INTO accessory_groups (name, description, basis, factor, allow_none, none_label, sort_order)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)`)
+            .run(g.name, g.description, g.basis, g.factor, g.allow_none ? 1 : 0, g.none_label || null, i).lastInsertRowid;
+        ['Class A', 'Class B', 'Class C'].forEach((label, j) => {
+            const shortName = g.name.replace(/\s*\(.*\)$/, '');
+            const productId = findOrCreate({ name: shortName, type: label, unit: g.unit, purchase_price: g.prices[j] },
+                g.name === 'المحرك' ? 'machine' : 'accessory');
+            db.prepare(`INSERT INTO accessory_options (group_id, label, product_id, details, sort_order) VALUES (?, ?, ?, ?, ?)`)
+                .run(groupId, label, productId, `مواصفات ${shortName} ${label} — تفاصيل تجريبية، عدّلها من لوحة الإدارة.`, j);
+        });
     });
 }
 
 function seedRegions(db) {
     const { n } = db.prepare('SELECT COUNT(*) AS n FROM regions').get();
-    if (n > 0) return;
-    const insert = db.prepare('INSERT INTO regions (name, governorate) VALUES (?, ?)');
-    for (const [gov, list] of Object.entries(WILAYAT)) for (const w of list) insert.run(w, gov);
+    if (n === 0) {
+        const insert = db.prepare('INSERT INTO regions (name, governorate) VALUES (?, ?)');
+        for (const [gov, list] of Object.entries(WILAYAT)) for (const w of list) insert.run(w, gov);
+    }
+    // Every governorate used by a wilayah gets a row the admin can enable or disable
+    const govs = db.prepare('SELECT DISTINCT governorate FROM regions WHERE governorate IS NOT NULL').all().map((r) => r.governorate);
+    const order = Object.keys(WILAYAT);
+    const insertGov = db.prepare('INSERT OR IGNORE INTO governorates (name, sort_order) VALUES (?, ?)');
+    for (const g of govs) insertGov.run(g, order.includes(g) ? order.indexOf(g) : 99);
 }
 
 /* Additive migrations for databases created by earlier versions */
@@ -283,7 +344,7 @@ function openDatabase(file = process.env.DB_FILE || path.join(__dirname, '..', '
         }
     }
     migrate(db);
-    seedDoors(db);
+    seedConfigurator(db);
     seedRegions(db);
     return db;
 }

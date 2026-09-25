@@ -8,6 +8,7 @@
     "node": ">=22.13"
   },
   "scripts": {
+    "prestart": "node scripts/setup.js",
     "start": "node --disable-warning=ExperimentalWarning src/server.js",
     "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
