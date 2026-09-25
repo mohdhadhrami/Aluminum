@@ -25,7 +25,7 @@ function systemPrompt(settings) {
 3. استخدم list_door_options واسأل العميل عن نوع البوابة (مثل الإيراني أو التركي أو العماني)، واسأله عن الولاية. استخدم find_region لتحديد الولاية؛ إذا ظهرت أكثر من نتيجة فاسأله عن المحافظة.
 4. استخدم get_price_range وأعطِ العميل نطاق السعر "من ... إلى ..." ريال عماني شاملاً الضريبة، ووضّح حالة رسوم التركيب كما تعيدها الأداة.
 5. اسأل العميل: "هل تريد أن أوضح لك الفروقات في الأسعار؟"
-6. إن وافق، استخدم compare_options واشرح: السماكات المتاحة لهذا النوع (إن وُجد أكثر من سماكة) والألوان، ثم الإكسسوارات واحدة تلو الأخرى (المسارات الجانبية، عمود محور الدوران، القواعد، المحرك...) مع فئاتها Class A / B / C وتفاصيل كل فئة وسعرها لهذا المقاس. لا تُغرق العميل بكل شيء في رسالة واحدة إن كانت طويلة.
+6. إن وافق، استخدم compare_options واشرح: السماكات/الدرجات المتاحة لهذا النوع (إن وُجد أكثر من واحدة) والألوان المتوفرة مع كل سماكة وسعر الشرائح لكل لون (بعض الألوان لها سعر ورسوم صبغ مختلفة)، ثم الإكسسوارات واحدة تلو الأخرى (المسارات الجانبية، عمود محور الدوران، القواعد، المحرك...) مع فئاتها Class A / B / C وتفاصيل كل فئة وسعرها لهذا المقاس. لا تُغرق العميل بكل شيء في رسالة واحدة إن كانت طويلة.
 7. بعد أن يختار العميل السماكة واللون وفئة كل إكسسوار، استخدم calculate_final_price وأعطه السعر النهائي مع تفصيل مختصر.
 8. اعرض عليه عرض سعر رسمي بصيغة PDF. إن وافق، اسأله عن اسمه ثم استخدم create_quote. سيُرسل الملف له تلقائياً بعد رسالتك.
 
@@ -50,7 +50,7 @@ const sizeProps = {
 const choiceProps = {
     shutter_type_id: { type: 'integer', description: 'رقم نوع البوابة من list_door_options' },
     variant_id: { type: ['integer', 'null'], description: 'رقم السماكة من compare_options، أو null إذا للنوع سماكة واحدة' },
-    color_id: { type: ['integer', 'null'], description: 'رقم اللون، أو null إذا لم يحدد العميل لوناً' },
+    color_id: { type: ['integer', 'null'], description: 'رقم اللون من ألوان السماكة المختارة في compare_options، أو null إذا لا توجد ألوان' },
     option_ids: { type: 'array', items: { type: 'integer' }, description: 'رقم الفئة المختارة (option_id) لكل مجموعة إكسسوارات؛ لا تضع شيئاً لمجموعة يمكن تركها (مثل بدون محرك)' },
     region_id: { type: ['integer', 'null'], description: 'رقم الولاية من find_region، أو null' }
 };
@@ -90,7 +90,7 @@ const TOOLS = [
     },
     {
         name: 'compare_options',
-        description: 'يشرح الفروقات لنوع بوابة ومقاس معين: السماكات المتاحة وسعر الشرائح لكل منها، والألوان، ولكل مجموعة إكسسوارات فئاتها (Class A/B/C) مع التفاصيل وسعر كل فئة لهذا المقاس.',
+        description: 'يشرح الفروقات لنوع بوابة ومقاس معين: السماكات/الدرجات المتاحة مع تفاصيلها، والألوان المتوفرة مع كل سماكة وسعر الشرائح لكل لون (شامل رسوم الصبغ)، ولكل مجموعة إكسسوارات فئاتها (Class A/B/C) مع التفاصيل وسعر كل فئة لهذا المقاس.',
         strict: true,
         input_schema: {
             type: 'object',
@@ -157,7 +157,7 @@ async function executeTool(name, input, ctx) {
             return {
                 shutter_types: catalog.shutter_types.map((t) => ({
                     shutter_type_id: t.id, name: t.name, description: t.description,
-                    thickness_options: t.variants.map((v) => v.label), colors: t.colors.map((c) => c.name)
+                    thickness_options: t.variants.map((v) => ({ label: v.label, details: v.description, colors: v.colors.map((c) => c.name) }))
                 })),
                 accessory_groups: catalog.accessory_groups.map((g) => ({
                     group: g.name, classes: g.options.map((o) => o.label), can_skip: g.allow_none

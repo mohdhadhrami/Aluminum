@@ -76,6 +76,12 @@ function applySettings(s) {
     $id('publicBaseUrl').value = s.public_base_url || '';
     $id('sqmToLinear').value = s.sqm_to_linear;
     $id('quoteValidity').value = s.quote_validity_days;
+    $id('companyTagline').value = s.company_tagline || '';
+    $id('companyPhone').value = s.company_phone || '';
+    $id('companyAddress').value = s.company_address || '';
+    $id('companyWebsite').value = s.company_website || '';
+    $id('calculatorNotice').value = s.calculator_notice || '';
+    $id('calculatorNotes').value = s.calculator_notes || '';
     recalculateAll();
 }
 
@@ -95,7 +101,13 @@ async function saveSettingsToServer() {
             company_whatsapp: $id('companyWhatsapp').value,
             public_base_url: $id('publicBaseUrl').value,
             sqm_to_linear: parseFloat($id('sqmToLinear').value) || 13,
-            quote_validity_days: parseInt($id('quoteValidity').value, 10) || 15
+            quote_validity_days: parseInt($id('quoteValidity').value, 10) || 15,
+            company_tagline: $id('companyTagline').value,
+            company_phone: $id('companyPhone').value,
+            company_address: $id('companyAddress').value,
+            company_website: $id('companyWebsite').value,
+            calculator_notice: $id('calculatorNotice').value,
+            calculator_notes: $id('calculatorNotes').value
         });
         applySettings(s);
         await loadProducts(); // LME-based prices depend on these settings
@@ -497,8 +509,13 @@ function renderTypes() {
             <h4>${esc(t.name)}</h4>
             <div class="status-text">${esc(t.description || '')}</div>
             <ul>
-                <li>السماكات: ${t.variants.map((v) => esc(v.label)).join('، ') || '<span style="color:var(--danger)">لا يوجد — لن يظهر للعميل</span>'}</li>
-                <li>الألوان: ${t.colors.map((c) => `<span class="swatch-dot" style="background:${esc(c.hex || '#ccc')}"></span> ${esc(c.name)}`).join('، ') || 'بدون اختيار لون'}</li>
+                ${t.variants.map((v) => {
+                    const p = products.find((x) => x.id === v.product_id);
+                    const colors = t.colors.filter((c) => c.variant_id == null || c.variant_id === v.id);
+                    return `<li><strong>${esc(v.label)}</strong> — ${p ? p.unit_price.toFixed(2) + ' ر.ع/' + esc(UNIT_NAMES[p.unit] || p.unit) : '؟'}
+                        ${v.width_add_cm || v.height_add_cm ? ` <span class="badge">+${v.width_add_cm} عرض / +${v.height_add_cm} ارتفاع سم</span>` : ''}<br>
+                        ${colors.map((c) => `<span class="swatch-dot" style="background:${esc(c.hex || '#ccc')}"></span> ${esc(c.name)}${c.price_per_m2 != null ? ` (${Number(c.price_per_m2).toFixed(2)}/م²)` : ''}${c.fixed_fee > 0 ? ` (+${c.fixed_fee} صبغ)` : ''}`).join('، ') || 'بدون اختيار لون'}</li>`;
+                }).join('') || '<li style="color:var(--danger)">لا توجد سماكات — لن يظهر للعميل</li>'}
             </ul>
             <button class="btn btn-outline btn-sm" onclick="editType(${t.id})">تعديل</button>
             <button class="btn btn-danger btn-sm" onclick="deleteType(${t.id})">حذف</button>
@@ -509,21 +526,58 @@ function addVariantRow(v = {}) {
     const tr = document.createElement('tr');
     tr.dataset.id = v.id || '';
     tr.innerHTML = `
-        <td><input class="row-input v-label" value="${esc(v.label || '')}"></td>
+        <td><input class="row-input v-label" value="${esc(v.label || '')}" style="width:110px" oninput="refreshColorVariantSelects()"></td>
         <td><select class="row-input v-product">${productOptions((p) => p.category === 'slat', v.product_id)}</select></td>
-        <td><button class="btn btn-danger btn-sm" onclick="this.closest('tr').remove()">✕</button></td>`;
+        <td><input class="row-input v-desc" value="${esc(v.description || '')}"></td>
+        <td><input type="number" class="row-input v-addw" min="0" step="1" value="${v.width_add_cm || 0}" style="width:70px"></td>
+        <td><input type="number" class="row-input v-addh" min="0" step="1" value="${v.height_add_cm || 0}" style="width:70px"></td>
+        <td><button class="btn btn-danger btn-sm" onclick="this.closest('tr').remove(); refreshColorVariantSelects()">✕</button></td>`;
     $id('variantRows').appendChild(tr);
+    refreshColorVariantSelects();
 }
 
-function addColorRow(c = {}) {
+/* Each color row picks a thickness by its position in the thickness table ('' = all) */
+function variantChoices() {
+    return [...document.querySelectorAll('#variantRows tr')].map((tr, i) => ({ index: i, label: tr.querySelector('.v-label').value || `#${i + 1}` }));
+}
+
+function refreshColorVariantSelects() {
+    const choices = variantChoices();
+    document.querySelectorAll('#colorRows .c-variant').forEach((sel) => {
+        const current = sel.value;
+        sel.innerHTML = '<option value="">كل السماكات</option>' +
+            choices.map((c) => `<option value="${c.index}">${esc(c.label)}</option>`).join('');
+        sel.value = current !== '' && Number(current) < choices.length ? current : '';
+    });
+}
+
+function addColorRow(c = {}, variantIndex = '') {
     const tr = document.createElement('tr');
     tr.dataset.id = c.id || '';
     tr.innerHTML = `
-        <td><input class="row-input c-name" value="${esc(c.name || '')}"></td>
+        <td><input class="row-input c-name" value="${esc(c.name || '')}" style="width:130px"></td>
         <td><input type="color" class="c-hex" value="${esc(c.hex || '#cccccc')}"></td>
-        <td><input type="number" class="row-input c-surcharge" min="0" step="0.1" value="${c.surcharge_per_m2 || 0}" style="width:100px"></td>
+        <td><select class="row-input c-variant"></select></td>
+        <td><input type="number" class="row-input c-price" min="0" step="0.1" value="${c.price_per_m2 ?? ''}" placeholder="سعر السماكة" style="width:110px"></td>
+        <td><input type="number" class="row-input c-fee" min="0" step="1" value="${c.fixed_fee || 0}" style="width:80px"></td>
         <td><button class="btn btn-danger btn-sm" onclick="this.closest('tr').remove()">✕</button></td>`;
+    tr.dataset.surcharge = c.surcharge_per_m2 || 0;
     $id('colorRows').appendChild(tr);
+    refreshColorVariantSelects();
+    tr.querySelector('.c-variant').value = variantIndex === '' ? '' : String(variantIndex);
+}
+
+async function importRadmaCatalog() {
+    if (!confirm('سيتم استبدال أنواع البوابات الحالية وسماكاتها وألوانها، وأسعار التركيب والمحافظات المفعّلة، بأسعار حاسبة الموقع. الإكسسوارات لن تتغير. متابعة؟')) return;
+    try {
+        await api('POST', '/api/admin/import/radma-catalog');
+        setStatus('importStatus', 'تم الاستيراد ✓', 'ok');
+        await loadProducts();
+        resetTypeForm();
+        await loadDoors();
+    } catch (err) {
+        setStatus('importStatus', err.message, 'err');
+    }
 }
 
 function resetTypeForm() {
@@ -551,7 +605,10 @@ function editType(id) {
     $id('variantRows').innerHTML = '';
     $id('colorRows').innerHTML = '';
     t.variants.forEach(addVariantRow);
-    t.colors.forEach(addColorRow);
+    t.colors.forEach((c) => {
+        const idx = t.variants.findIndex((v) => v.id === c.variant_id);
+        addColorRow(c, idx >= 0 ? idx : '');
+    });
     $id('typeFormTitle').scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -564,11 +621,14 @@ async function saveType() {
             sort_order: $id('typeSort').value, active: $id('typeActive').checked,
             variants: rows('#variantRows').map((tr) => ({
                 id: Number(tr.dataset.id) || undefined, label: tr.querySelector('.v-label').value,
-                product_id: Number(tr.querySelector('.v-product').value)
+                product_id: Number(tr.querySelector('.v-product').value), description: tr.querySelector('.v-desc').value,
+                width_add_cm: tr.querySelector('.v-addw').value, height_add_cm: tr.querySelector('.v-addh').value
             })),
             colors: rows('#colorRows').map((tr) => ({
                 id: Number(tr.dataset.id) || undefined, name: tr.querySelector('.c-name').value,
-                hex: tr.querySelector('.c-hex').value, surcharge_per_m2: tr.querySelector('.c-surcharge').value
+                hex: tr.querySelector('.c-hex').value, variant_index: tr.querySelector('.c-variant').value,
+                price_per_m2: tr.querySelector('.c-price').value, fixed_fee: tr.querySelector('.c-fee').value,
+                surcharge_per_m2: tr.dataset.surcharge
             }))
         });
         resetTypeForm();
@@ -690,8 +750,7 @@ async function previewDoor() {
             <div class="pkg-card" style="margin-top:10px;">
                 <h4>${esc(compare.shutter_type.name)} — تفاصيل الفروقات (شاملة الضريبة)</h4>
                 <ul>
-                    ${compare.thickness_options.map((v) => `<li>شرائح ${esc(v.label)}: ${v.slats_price_with_vat.toFixed(2)} ر.ع</li>`).join('')}
-                    ${compare.colors.filter((c) => c.adds_with_vat > 0).map((c) => `<li>لون ${esc(c.name)}: +${c.adds_with_vat.toFixed(2)} ر.ع</li>`).join('')}
+                    ${compare.thickness_options.map((v) => `<li>شرائح ${esc(v.label)}: ${v.colors.map((c) => `${esc(c.name)} ${c.slats_price_with_vat.toFixed(2)}`).join('، ')} ر.ع</li>`).join('')}
                 </ul>
                 ${compare.accessories.map((g) => `<strong>${esc(g.group)}</strong><ul>${g.classes.map((c) => `<li>${esc(c.label)}: ${c.price_with_vat.toFixed(2)} ر.ع</li>`).join('')}${g.can_skip ? `<li>${esc(g.skip_label)}: 0.00</li>` : ''}</ul>`).join('')}
             </div>` : '';
@@ -728,6 +787,7 @@ function renderRegions() {
         <tr>
             <td>${esc(r.governorate || '')}</td>
             <td>${esc(r.name)}</td>
+            <td><input type="checkbox" id="ra${r.id}" ${r.active ? 'checked' : ''}></td>
             <td><input type="number" min="0" step="0.5" id="ri${r.id}" value="${r.installation_fee ?? ''}" placeholder="بعد المعاينة" style="width:110px"></td>
             <td><input type="number" min="0" step="0.5" id="rd${r.id}" value="${r.delivery_fee ?? ''}" placeholder="—" style="width:90px"></td>
             <td><button class="btn btn-outline btn-sm" onclick="saveRegion(${r.id}, this)">حفظ</button></td>
@@ -736,7 +796,9 @@ function renderRegions() {
 
 async function saveRegion(id, btn) {
     try {
-        const r = await api('PUT', `/api/admin/regions/${id}`, { installation_fee: $id('ri' + id).value, delivery_fee: $id('rd' + id).value });
+        const r = await api('PUT', `/api/admin/regions/${id}`, {
+            installation_fee: $id('ri' + id).value, delivery_fee: $id('rd' + id).value, active: $id('ra' + id).checked
+        });
         regions[regions.findIndex((x) => x.id === id)] = r;
         btn.textContent = '✓';
         setTimeout(() => { btn.textContent = 'حفظ'; }, 1500);

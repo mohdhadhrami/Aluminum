@@ -34,34 +34,57 @@ test('wilayat list follows the governorate, and disabled governorates disappear'
     assert.strictEqual(doors.getRegion(db, nizwa.id), null); // cannot be quoted either
 });
 
-test('door price: thickness, class per accessory group and installation by wilayah', () => {
+test('slat price follows the company site: size allowance, per-color price and paint fee', () => {
     const db = openDatabase(':memory:');
     const [nizwa] = doors.findRegions(db, 'نزوى');
-    db.prepare('UPDATE regions SET installation_fee = 20 WHERE id = ?').run(nizwa.id);
+    assert.strictEqual(nizwa.installation_fee, 60); // imported installation fee
+    const type = omani(db);
+    const [v11] = type.variants;
+    const white = v11.colors.find((c) => c.name === 'أبيض');
+    const colored = v11.colors.find((c) => c.name.startsWith('ملون'));
+    const classA = doors.compareOptions(db, { ...size, shutterTypeId: type.id }).accessories.map((g) => g.classes[0].option_id);
+
+    // (300 + 20) × (250 + 60) cm = 9.92 m² — the site's area rule for Omani slats
+    const w = doors.finalPrice(db, { ...size, shutterTypeId: type.id, variantId: v11.id, colorId: white.id, optionIds: classA, regionId: nizwa.id });
+    assert.strictEqual(w.items[0].quantity, 9.92);
+    assert.strictEqual(w.items[0].line_total, 213.28); // 9.92 × 21.5
+    assert.ok(w.items.some((i) => i.name === 'التركيب' && i.line_total === 60));
+
+    // Colored 1.1 mm: 19.5 per m² plus a fixed 60 paint fee
+    const c = doors.finalPrice(db, { ...size, shutterTypeId: type.id, variantId: v11.id, colorId: colored.id, optionIds: classA, regionId: nizwa.id });
+    assert.strictEqual(c.items[0].line_total, 193.44);
+    assert.ok(c.items.some((i) => i.name === 'رسوم الصبغ' && i.line_total === 60));
+    assert.ok(c.spec.some(([k, val]) => k === 'اللون' && val === colored.name));
+});
+
+test('colors branch from the thickness: Turkish wood only with Grade B', () => {
+    const db = openDatabase(':memory:');
+    const turkish = doors.publicCatalog(db).shutter_types.find((t) => t.name === 'التركي');
+    const gradeB = turkish.variants.find((v) => v.label === 'Grade B');
+    const gradeA = turkish.variants.find((v) => v.label === 'Grade A');
+    const wood = gradeB.colors.find((c) => c.name === 'خشبي');
+    assert.ok(wood);
+    assert.deepStrictEqual(gradeA.colors.map((c) => c.name), ['أبيض', 'بيج']);
+    const optionIds = doors.compareOptions(db, { ...size, shutterTypeId: turkish.id }).accessories.map((g) => g.classes[0].option_id);
+    assert.throws(() => doors.finalPrice(db, { ...size, shutterTypeId: turkish.id, variantId: gradeA.id, colorId: wood.id, optionIds }), /غير متوفر/);
+    const priced = doors.finalPrice(db, { ...size, shutterTypeId: turkish.id, variantId: gradeB.id, colorId: wood.id, optionIds });
+    assert.strictEqual(priced.items[0].unit_price, 26); // wood has its own price per m²
+    assert.strictEqual(priced.items[0].quantity, 9.765); // (300 + 15) × (250 + 60) cm = 3.15 × 3.1 m
+});
+
+test('accessory class and skippable groups', () => {
+    const db = openDatabase(':memory:');
     const type = omani(db);
     const cmp = doors.compareOptions(db, { ...size, shutterTypeId: type.id });
-    assert.strictEqual(cmp.thickness_options.length, 2); // 1.1 and 1.5 mm
-
-    const classB = cmp.accessories.map((g) => g.classes[1].option_id);
-    const priced = doors.finalPrice(db, { ...size, shutterTypeId: type.id, variantId: cmp.thickness_options[1].variant_id,
-        colorId: type.colors[0].id, optionIds: classB, regionId: nizwa.id });
-    assert.strictEqual(priced.items[0].quantity, 97.5); // 3 m × 2.5 m × 13 m per m²
-    assert.ok(priced.items.some((i) => i.name === 'التركيب' && i.line_total === 20));
-    assert.ok(priced.spec.some(([k, v]) => k === 'اللون' && v === type.colors[0].name));
-    assert.strictEqual(priced.delivery_installation, 'شامل التركيب');
-
-    // Every accessory class choice changes the price by exactly the compared amount
+    const v = type.variants[0];
+    const base = { ...size, shutterTypeId: type.id, variantId: v.id, colorId: v.colors[0].id };
     const classA = cmp.accessories.map((g) => g.classes[0].option_id);
-    const cheaper = doors.finalPrice(db, { ...size, shutterTypeId: type.id, variantId: cmp.thickness_options[1].variant_id,
-        colorId: type.colors[0].id, optionIds: classA, regionId: nizwa.id });
+    const classB = cmp.accessories.map((g) => g.classes[1].option_id);
+    const diff = doors.finalPrice(db, { ...base, optionIds: classB }).total - doors.finalPrice(db, { ...base, optionIds: classA }).total;
     const expected = cmp.accessories.reduce((s, g) => s + g.classes[1].price_with_vat - g.classes[0].price_with_vat, 0);
-    assert.ok(Math.abs(priced.total - cheaper.total - expected) < 0.05);
-
-    // A required group cannot be skipped; the motor group can ("بدون محرك")
-    const withoutChannels = classB.slice(1);
-    assert.throws(() => doors.finalPrice(db, { ...size, shutterTypeId: type.id, variantId: cmp.thickness_options[0].variant_id, optionIds: withoutChannels }), /اختر نوع/);
-    const withoutMotor = classB.slice(0, -1);
-    assert.ok(doors.finalPrice(db, { ...size, shutterTypeId: type.id, variantId: cmp.thickness_options[0].variant_id, optionIds: withoutMotor }).total > 0);
+    assert.ok(Math.abs(diff - expected) < 0.05);
+    assert.throws(() => doors.finalPrice(db, { ...base, optionIds: classB.slice(1) }), /اختر نوع/); // channels are required
+    assert.ok(doors.finalPrice(db, { ...base, optionIds: classB.slice(0, -1) }).total > 0);   // motor can be skipped
 });
 
 test('price range spans the cheapest to the dearest configuration', () => {
@@ -69,10 +92,12 @@ test('price range spans the cheapest to the dearest configuration', () => {
     const type = omani(db);
     const range = doors.priceRange(db, { ...size, shutterTypeId: type.id });
     const cmp = doors.compareOptions(db, { ...size, shutterTypeId: type.id });
-    const dearest = doors.finalPrice(db, { ...size, shutterTypeId: type.id, variantId: cmp.thickness_options[1].variant_id,
-        colorId: type.colors[0].id, optionIds: cmp.accessories.map((g) => g.classes[2].option_id) });
+    const combos = cmp.thickness_options.flatMap((v) => v.colors.map((c) => ({ ...c, variant_id: v.variant_id })));
+    const dearest = combos.reduce((a, b) => (b.slats_price_with_vat > a.slats_price_with_vat ? b : a));
+    const top = doors.finalPrice(db, { ...size, shutterTypeId: type.id, variantId: dearest.variant_id, colorId: dearest.color_id,
+        optionIds: cmp.accessories.map((g) => g.classes[2].option_id) });
     assert.ok(range.from < range.to);
-    assert.strictEqual(range.to, dearest.total);
+    assert.strictEqual(range.to, top.total);
     assert.strictEqual(doors.priceRange(db, size).by_type.length, 3); // all types when none chosen
 });
 
@@ -82,7 +107,7 @@ test('agent runs tools, prices from the database and creates a quote with a PDF'
     const cmp = doors.compareOptions(db, { ...size, shutterTypeId: type.id });
     const choice = {
         width_cm: 300, height_cm: 250, door_count: 1, shutter_type_id: type.id, variant_id: cmp.thickness_options[0].variant_id,
-        color_id: type.colors[1].id, option_ids: cmp.accessories.map((g) => g.classes[0].option_id), region_id: null
+        color_id: type.variants[0].colors[1].id, option_ids: cmp.accessories.map((g) => g.classes[0].option_id), region_id: null
     };
 
     const client = fakeClient([
@@ -136,21 +161,21 @@ test('public door quote requires name, mobile and wilayah, and prices on the ser
 
     const conf = await (await fetch(base + '/api/public/configurator')).json();
     const type = conf.shutter_types.find((x) => x.variants.length === 1); // Iranian: no thickness choice
-    const door = { width_cm: 300, height_cm: 250, count: 1, shutter_type_id: type.id, color_id: type.colors[0].id,
-        option_ids: conf.accessory_groups.map((g) => g.options[0].id) };
+    const wilayah = conf.locations[0].wilayat[0];
+    const door = { width_cm: 300, height_cm: 250, count: 1, shutter_type_id: type.id, color_id: type.variants[0].colors[0].id,
+        option_ids: conf.accessory_groups.map((g) => g.options[0].id), region_id: wilayah.id };
     assert.ok(!JSON.stringify(conf).includes('purchase_price'));
 
     const live = await (await post('/api/public/door-price', door)).json();
     assert.ok(live.total > 0);
 
-    const noRegion = await post('/api/public/door-quotes', { ...door, customer_name: 'أحمد', customer_phone: '99123456' });
+    const noRegion = await post('/api/public/door-quotes', { ...door, region_id: null, customer_name: 'أحمد', customer_phone: '99123456' });
     assert.strictEqual(noRegion.status, 400);
 
-    const wilayah = conf.locations[0].wilayat[0];
-    const ok = await post('/api/public/door-quotes', { ...door, customer_name: 'أحمد', customer_phone: '99123456', region_id: wilayah.id });
+    const ok = await post('/api/public/door-quotes', { ...door, customer_name: 'أحمد', customer_phone: '99123456' });
     const quote = await ok.json();
     assert.strictEqual(ok.status, 201);
-    assert.strictEqual(quote.total, live.total); // no installation fee set yet for this wilayah
+    assert.strictEqual(quote.total, live.total); // same server-side price as the live preview
     assert.match(quote.customer_city, new RegExp(wilayah.name));
     assert.ok(!('access_key' in quote));
 });

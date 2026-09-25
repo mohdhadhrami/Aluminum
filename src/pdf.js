@@ -4,11 +4,14 @@
    left-to-right, so this file places every word itself, right to left.
    Arabic words use Noto Naskh Arabic; digits and Latin text use Helvetica.
    ============================================================= */
+const fs = require('node:fs');
 const path = require('node:path');
 const PDFDocument = require('pdfkit');
 
 const FONT_DIR = path.join(__dirname, '..', 'assets', 'fonts');
-const COLORS = { primary: '#1a5276', accent: '#e67e22', text: '#2c3e50', light: '#7f8c8d', border: '#dce1e8', band: '#f0f2f5' };
+// Same palette as the customer calculator (company site identity)
+const COLORS = { primary: '#1e40af', accent: '#16a34a', text: '#1e293b', light: '#64748b', border: '#e2e8f0', band: '#f1f5f9' };
+const LOGO = path.join(__dirname, '..', 'public', 'images', 'logo.png');
 const UNIT_LABELS = { meter: 'متر', piece: 'قطعة', m2: 'متر مربع', set: 'طقم', kg: 'كجم', service: 'خدمة' };
 
 const ARABIC = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
@@ -140,8 +143,14 @@ function renderQuotePdf(quote, settings, out) {
 
     // ---- Header band ----
     doc.rect(0, 0, doc.page.width, 92).fill(COLORS.primary);
-    w.line(settings.company_name, left, 18, width, { size: 18, bold: true, color: '#ffffff' });
-    w.line('عرض سعر', left, 52, width, { size: 13, color: '#ffffff' });
+    // Logo on a white badge at the right; company name beside it
+    let nameRight = width;
+    if (fs.existsSync(LOGO)) {
+        doc.roundedRect(right - 64, 14, 64, 64, 10).fill('#ffffff');
+        try { doc.image(LOGO, right - 60, 18, { fit: [56, 56], align: 'center', valign: 'center' }); nameRight = width - 76; } catch { /* unreadable image: skip */ }
+    }
+    w.line(settings.company_name, left, 18, nameRight, { size: 18, bold: true, color: '#ffffff' });
+    w.line('عرض سعر', left, 52, nameRight, { size: 13, color: '#ffffff' });
     doc.font('Helvetica-Bold').fontSize(13).fillColor('#ffffff').text(quote.ref, left, 26, { lineBreak: false });
     const created = String(quote.created_at || new Date().toISOString()).slice(0, 10);
     doc.font('Helvetica').fontSize(10).text(created, left, 50, { lineBreak: false });
