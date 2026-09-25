@@ -537,14 +537,27 @@
         .status-text { font-size: 0.85rem; color: var(--text-light); }
         .status-text.ok { color: var(--success); }
         .status-text.err { color: var(--danger); }
+        /* Full-screen sign-in: nothing of the admin panel is usable until the password is accepted */
         .login-bar {
-            position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
-            background: var(--primary-dark); color: white; padding: 12px 16px;
-            display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center;
+            position: fixed; inset: 0; z-index: 200; padding: 16px;
+            background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+            display: flex; align-items: center; justify-content: center;
         }
         .login-bar[hidden], [hidden] { display: none !important; }
-        .login-bar input { padding: 8px 12px; border-radius: 6px; border: none; font-family: inherit; min-width: 180px; }
-        .login-bar .status-text { color: #f5b7b1; }
+        .login-card {
+            background: #fff; color: var(--text); border-radius: 14px; padding: 28px 24px; width: 100%; max-width: 380px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.25); text-align: center;
+        }
+        .login-card img { width: 72px; height: auto; margin-bottom: 8px; }
+        .login-card h2 { font-size: 1.2rem; margin-bottom: 4px; color: var(--primary); }
+        .login-card p { color: var(--text-light); font-size: 0.88rem; margin-bottom: 16px; }
+        .login-card input {
+            width: 100%; padding: 12px 14px; border: 2px solid var(--border); border-radius: 8px;
+            font-family: inherit; font-size: 1rem; margin-bottom: 12px; text-align: center;
+        }
+        .login-card input:focus { outline: none; border-color: var(--primary-light); }
+        .login-card .btn { width: 100%; padding: 12px; font-size: 1rem; justify-content: center; }
+        .login-card .status-text { display: block; margin-top: 10px; color: var(--danger); }
         .filter-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
         .filter-row select { padding: 8px 12px; border: 2px solid var(--border); border-radius: 8px; font-family: inherit; }
         .badge {
@@ -605,6 +618,7 @@
             <span class="header-icon">AL</span>
             نظام تسعير شرائح الألمنيوم
         </h1>
+        <button class="tab-btn" onclick="logout()" title="تسجيل الخروج" style="background: rgba(255,255,255,0.12); color: #fff;">خروج</button>
         <div class="tabs">
             <button class="tab-btn active" data-tab="pricing" onclick="switchTab('pricing')">حاسبة التسعير</button>
             <button class="tab-btn" data-tab="weight" onclick="switchTab('weight')">حاسبة الوزن</button>
@@ -1350,10 +1364,14 @@ X-Aluminum-Signature: sha256=HMAC_SHA256(secret, body)
 
     <!-- Login overlay for the admin API -->
     <div id="loginBar" class="login-bar" hidden>
-        <span>لوحة الإدارة تحتاج رمز الدخول (ADMIN_TOKEN):</span>
-        <input type="password" id="adminToken" placeholder="رمز الدخول" onkeydown="if(event.key==='Enter')login()">
-        <button class="btn btn-primary" onclick="login()">دخول</button>
-        <span id="loginStatus" class="status-text"></span>
+        <form class="login-card" onsubmit="event.preventDefault(); login();">
+            <img src="images/logo.png" alt="">
+            <h2>لوحة إدارة الأسعار</h2>
+            <p>أدخل كلمة مرور الإدارة للمتابعة</p>
+            <input type="password" id="adminToken" placeholder="كلمة المرور" autocomplete="current-password" required>
+            <button class="btn btn-primary" type="submit">دخول</button>
+            <span id="loginStatus" class="status-text"></span>
+        </form>
     </div>
 
     <!-- Footer -->

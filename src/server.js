@@ -43,17 +43,35 @@ function rateLimit({ windowMs, max }) {
     };
 }
 
-function requireAdmin(req, res, next) {
-    const expected = process.env.ADMIN_TOKEN;
-    if (!expected) return res.status(503).json({ error: 'ADMIN_TOKEN غير مضبوط على الخادم' });
-    const given = (req.get('Authorization') || '').replace(/^Bearer\s+/i, '');
-    const a = Buffer.from(given);
-    const b = Buffer.from(expected);
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-        return res.status(401).json({ error: 'رمز الدخول غير صحيح' });
-    }
-    next();
+/* Admin password check. After 10 wrong passwords from one IP in 15 minutes,
+   that IP is locked out for 15 minutes (brute-force protection on a public server). */
+function makeRequireAdmin() {
+    const WINDOW = 15 * 60_000;
+    const MAX_FAILURES = 10;
+    const failures = new Map();
+    return (req, res, next) => {
+        const expected = process.env.ADMIN_TOKEN;
+        if (!expected) return res.status(503).json({ error: 'ADMIN_TOKEN غير مضبوط على الخادم' });
+        const now = Date.now();
+        const recent = (failures.get(req.ip) || []).filter((t) => now - t < WINDOW);
+        if (recent.length >= MAX_FAILURES) {
+            return res.status(429).json({ error: 'محاولات دخول كثيرة خاطئة. حاول مرة أخرى بعد 15 دقيقة.' });
+        }
+        const given = (req.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+        const a = Buffer.from(given);
+        const b = Buffer.from(expected);
+        if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+            recent.push(now);
+            failures.set(req.ip, recent);
+            return res.status(401).json({ error: 'كلمة مرور الإدارة غير صحيحة' });
+        }
+        failures.delete(req.ip);
+        next();
+    };
 }
+
+/* Sites allowed to embed the customer calculator in an <iframe> (space separated) */
+const embedOrigins = () => (process.env.EMBED_ALLOWED_ORIGINS ?? 'https://radma.co https://www.radma.co').trim();
 
 /* Validate and normalise a product payload (partial when updating) */
 function parseProduct(body, partial = false) {
@@ -152,6 +170,22 @@ function createApp(db) {
     const app = express();
     app.set('trust proxy', process.env.TRUST_PROXY === '1');
     app.use(express.json({ limit: '200kb', verify: (req, res, buf) => { req.rawBody = buf; } }));
+    app.disable('x-powered-by');
+
+    // Security headers. Only the customer pages may be embedded, and only by the allowed sites;
+    // the admin panel and everything else can never be framed (clickjacking protection).
+    const customerPages = new Set(['/', '/calculator.html', '/materials.html']);
+    app.use((req, res, next) => {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+        if (customerPages.has(req.path)) {
+            res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${embedOrigins()}`.trim());
+        } else {
+            res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+            res.setHeader('X-Frame-Options', 'DENY');
+        }
+        next();
+    });
 
     const getProduct = (id) => db.prepare('SELECT * FROM products WHERE id = ?').get(Number(id));
 
@@ -271,7 +305,7 @@ function createApp(db) {
     /* ------------------------- Admin API -------------------------- */
 
     const admin = express.Router();
-    admin.use(requireAdmin);
+    admin.use(makeRequireAdmin());
 
     admin.get('/settings', (req, res) => res.json(getSettings(db)));
 
@@ -699,7 +733,13 @@ function createApp(db) {
     app.use('/api/admin', admin);
 
     whatsapp.registerRoutes(app, db, { saveQuote: (q) => saveQuote(db, q) });
-    app.use(express.static(path.join(__dirname, '..', 'public')));
+    // Pages: the customer calculator is the site's home page (shareable link, no password);
+    // the admin panel lives at /admin and asks for the admin password.
+    const publicDir = path.join(__dirname, '..', 'public');
+    app.get('/', (req, res) => res.sendFile(path.join(publicDir, 'calculator.html')));
+    app.get(['/admin', '/admin/'], (req, res) => res.sendFile(path.join(publicDir, 'admin.html')));
+    app.get(['/index.html', '/admin.html'], (req, res) => res.redirect(301, '/admin'));
+    app.use(express.static(publicDir, { index: false }));
 
     app.use('/api', (req, res) => res.status(404).json({ error: 'غير موجود' }));
     // eslint-disable-next-line no-unused-vars

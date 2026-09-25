@@ -39,6 +39,12 @@
         ::selection { background: #1d4ed8; color: #fff; }
         [hidden] { display: none !important; }
 
+        /* Embedded in another site (iframe): the host page provides header and footer */
+        html.embedded body { background: transparent; min-height: 0; }
+        html.embedded .site-header, html.embedded .site-footer { display: none; }
+        html.embedded .site-main { padding: 0; max-width: none; }
+        html.embedded .calc-container { box-shadow: none; }
+
         /* ---------- Header ---------- */
         .site-header {
             position: sticky; top: 0; z-index: 50; padding: 12px 16px;
@@ -470,7 +476,7 @@
             $('accPrice' + g.id).textContent = line ? money(line.line_total) + ' ر.ع' : '';
         }
         $('resultBox').hidden = false;
-        $('result').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        scrollToEl($('result'));
     }
 
     async function submitQuote() {
@@ -495,12 +501,32 @@
             if (data.whatsapp_link) { $('waLink').href = data.whatsapp_link; $('waLink').hidden = false; }
             $('calcForm').hidden = true;
             $('successBox').hidden = false;
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            scrollToEl(document.body);
         } catch (err) {
             setStatus('error', esc(err.message));
         } finally {
             btn.disabled = false;
         }
+    }
+
+    /* ---------- Embedding (radma.co iframe via embed.js) ---------- */
+    const embedded = window.self !== window.top || new URLSearchParams(location.search).has('embed');
+    const tellParent = (msg) => { if (window.parent !== window) window.parent.postMessage({ source: 'radma-calculator', ...msg }, '*'); };
+
+    /* Inside an iframe, ask the host page to scroll; otherwise scroll this page */
+    function scrollToEl(el) {
+        if (embedded) tellParent({ type: 'scroll', top: el === document.body ? 0 : el.getBoundingClientRect().top + window.scrollY - 40 });
+        else if (el === document.body) window.scrollTo({ top: 0, behavior: 'smooth' });
+        else el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    if (embedded) {
+        document.documentElement.classList.add('embedded');
+        // Keep the iframe exactly as tall as the calculator, so the host page never shows a scrollbar inside it
+        // Measure the content (body), not the document: inside an iframe the document is never shorter than the frame
+        const report = () => tellParent({ type: 'height', height: Math.ceil(document.body.getBoundingClientRect().height) });
+        new ResizeObserver(report).observe(document.body);
+        window.addEventListener('load', report);
     }
 
     load();
