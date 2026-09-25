@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>حاسبة عرض السعر</title>
+    <style>
+        :root {
+            --primary: #1a5276;
+            --primary-dark: #0e2f44;
+            --accent: #e67e22;
+            --success: #27ae60;
+            --danger: #e74c3c;
+            --bg: #f0f2f5;
+            --card-bg: #ffffff;
+            --text: #2c3e50;
+            --text-light: #7f8c8d;
+            --border: #dce1e8;
+            --shadow: 0 2px 12px rgba(0,0,0,0.08);
+            --radius: 10px;
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+            background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh;
+        }
+        header {
+            background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+            color: #fff; padding: 22px 16px; text-align: center;
+        }
+        header h1 { font-size: 1.35rem; }
+        header p { opacity: 0.85; font-size: 0.9rem; }
+        main { max-width: 860px; margin: 0 auto; padding: 20px 16px 40px; }
+        .card {
+            background: var(--card-bg); border-radius: var(--radius); box-shadow: var(--shadow);
+            padding: 20px; margin-bottom: 18px;
+        }
+        .card h2 { font-size: 1.05rem; color: var(--primary); margin-bottom: 14px; }
+        .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+        .chip {
+            border: 2px solid var(--border); background: #fff; border-radius: 20px;
+            padding: 6px 16px; cursor: pointer; font: inherit; font-size: 0.9rem; color: var(--text);
+        }
+        .chip.active { border-color: var(--primary); background: var(--primary); color: #fff; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; align-items: end; }
+        label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; }
+        input, select, textarea {
+            width: 100%; padding: 9px 12px; border: 2px solid var(--border); border-radius: 8px;
+            font: inherit; font-size: 0.95rem; background: #fafbfc; color: var(--text);
+        }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); background: #fff; }
+        .btn {
+            border: none; border-radius: 8px; padding: 10px 20px; font: inherit; font-weight: 600;
+            cursor: pointer; font-size: 0.95rem;
+        }
+        .btn-primary { background: var(--primary); color: #fff; }
+        .btn-accent { background: var(--accent); color: #fff; width: 100%; padding: 13px; font-size: 1.05rem; }
+        .btn-success { background: #25d366; color: #fff; text-decoration: none; display: inline-block; }
+        .btn-pdf { background: var(--primary); color: #fff; text-decoration: none; display: inline-block; }
+        .btn-link { background: none; color: var(--danger); padding: 4px 8px; }
+        .btn:disabled { opacity: 0.6; cursor: wait; }
+        .mode { display: flex; gap: 16px; margin-bottom: 10px; font-size: 0.9rem; }
+        .mode label { display: flex; gap: 6px; align-items: center; font-weight: 500; cursor: pointer; }
+        .mode input { width: auto; }
+        .hint { color: var(--text-light); font-size: 0.82rem; margin-top: 8px; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th { background: var(--primary); color: #fff; padding: 9px 8px; font-weight: 600; white-space: nowrap; }
+        td { padding: 9px 8px; border-bottom: 1px solid var(--border); text-align: center; }
+        td.name { text-align: right; }
+        .empty { text-align: center; color: var(--text-light); padding: 20px; }
+        .totals { margin-top: 14px; display: grid; gap: 6px; max-width: 320px; margin-inline-start: auto; }
+        .totals div { display: flex; justify-content: space-between; }
+        .totals .grand { font-size: 1.2rem; font-weight: 700; color: var(--accent); border-top: 2px solid var(--border); padding-top: 6px; }
+        .error { background: #fdecea; color: var(--danger); padding: 10px 14px; border-radius: 8px; margin-top: 12px; display: none; }
+        .success-box { text-align: center; }
+        .success-box .ref { font-size: 1.6rem; font-weight: 700; color: var(--primary); direction: ltr; margin: 8px 0; }
+        footer { text-align: center; color: var(--text-light); font-size: 0.8rem; padding: 10px; }
+        [hidden] { display: none !important; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1 id="companyName">حاسبة عرض السعر</h1>
+        <p>احسب تكلفة طلبك واحصل على عرض سعر فوري</p>
+    </header>
+
+    <main>
+        <section class="card" id="pickerCard">
+            <h2>1. اختر المنتجات</h2>
+            <div class="chips" id="categoryChips"></div>
+            <div class="grid">
+                <div style="grid-column: 1 / -1;">
+                    <label for="productSelect">المنتج</label>
+                    <select id="productSelect" onchange="renderQuantityInputs()"></select>
+                </div>
+            </div>
+
+            <div id="slatMode" class="mode" style="margin-top: 12px;" hidden>
+                <label><input type="radio" name="slatMode" value="dims" checked onchange="renderQuantityInputs()"> بمقاسات الفتحة</label>
+                <label><input type="radio" name="slatMode" value="meters" onchange="renderQuantityInputs()"> بالمتر الطولي</label>
+            </div>
+
+            <div class="grid" style="margin-top: 8px;">
+                <div id="dimsInputs" hidden>
+                    <label for="width">العرض (متر)</label>
+                    <input type="number" id="width" min="0.1" step="0.01" value="3">
+                </div>
+                <div id="dimsInputs2" hidden>
+                    <label for="height">الارتفاع (متر)</label>
+                    <input type="number" id="height" min="0.1" step="0.01" value="2.5">
+                </div>
+                <div id="piecesInput" hidden>
+                    <label for="pieces">عدد الأبواب</label>
+                    <input type="number" id="pieces" min="1" step="1" value="1">
+                </div>
+                <div id="qtyInput">
+                    <label for="quantity" id="qtyLabel">الكمية</label>
+                    <input type="number" id="quantity" min="0.01" step="0.01" value="1">
+                </div>
+                <div><button class="btn btn-primary" style="width:100%;" onclick="addLine()">+ إضافة للطلب</button></div>
+            </div>
+            <p class="hint" id="unitPriceHint"></p>
+        </section>
+
+        <section class="card">
+            <h2>2. ملخص الطلب</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>المنتج</th><th>الكمية</th><th>سعر الوحدة</th><th>المجموع</th><th></th></tr></thead>
+                    <tbody id="linesBody"></tbody>
+                </table>
+            </div>
+            <div class="empty" id="emptyLines">لم تضف أي منتج بعد.</div>
+            <div class="totals" id="totals" hidden>
+                <div><span>المجموع قبل الضريبة</span><span id="subtotal">0.00</span></div>
+                <div><span id="vatLabel">الضريبة</span><span id="vat">0.00</span></div>
+                <div class="grand"><span>الإجمالي (ر.ع)</span><span id="total">0.00</span></div>
+            </div>
+            <p class="hint">الأسعار تقديرية وتصبح نهائية بعد تأكيد المقاسات من فريقنا.</p>
+        </section>
+
+        <section class="card" id="customerCard">
+            <h2>3. بياناتك لإرسال العرض</h2>
+            <div class="grid">
+                <div><label for="custName">الاسم *</label><input id="custName" autocomplete="name"></div>
+                <div><label for="custPhone">رقم الهاتف / واتساب *</label><input id="custPhone" type="tel" inputmode="tel" placeholder="9XXXXXXX" autocomplete="tel"></div>
+                <div><label for="custCity">المدينة</label><input id="custCity"></div>
+            </div>
+            <div style="margin-top: 12px;"><label for="custNotes">ملاحظات</label><textarea id="custNotes" rows="2"></textarea></div>
+            <div style="margin-top: 16px;"><button class="btn btn-accent" id="submitBtn" onclick="submitQuote()">اطلب عرض السعر</button></div>
+            <div class="error" id="errorBox"></div>
+        </section>
+
+        <section class="card success-box" id="successCard" hidden>
+            <h2>تم استلام طلبك ✅</h2>
+            <p>رقم عرض السعر:</p>
+            <div class="ref" id="quoteRef"></div>
+            <p>الإجمالي: <strong id="quoteTotal"></strong> ر.ع — سنتواصل معك قريباً.</p>
+            <p style="margin-top: 14px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                <a class="btn btn-pdf" id="pdfLink" target="_blank" rel="noopener">📄 تحميل عرض السعر PDF</a>
+                <a class="btn btn-success" id="waLink" target="_blank" rel="noopener" hidden>تابع عبر واتساب</a>
+            </p>
+            <p style="margin-top: 14px;"><button class="btn btn-primary" onclick="location.reload()">طلب جديد</button></p>
+        </section>
+    </main>
+
+    <footer id="footer"></footer>
+
+    <script>
+    const CATEGORY_LABELS = { slat: 'الشرائح', accessory: 'الإكسسوارات', machine: 'المكائن' };
+    const UNIT_LABELS = { meter: 'متر', piece: 'قطعة', m2: 'م²', set: 'طقم', kg: 'كجم' };
+    const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+    const $ = (id) => document.getElementById(id);
+
+    let catalog = null;
+    let category = null;
+    const lines = [];
+
+    function escapeHtml(s) {
+        return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    const productLabel = (p) => p.name + (p.type ? ' — ' + p.type : '');
+    const selectedProduct = () => catalog.products.find((p) => p.id === Number($('productSelect').value));
+
+    async function load() {
+        try {
+            const res = await fetch('/api/public/catalog');
+            if (!res.ok) throw new Error();
+            catalog = await res.json();
+        } catch {
+            $('pickerCard').innerHTML = '<p class="empty">تعذر تحميل قائمة الأسعار. يرجى المحاولة لاحقاً.</p>';
+            return;
+        }
+        $('companyName').textContent = catalog.company_name;
+        document.title = 'حاسبة عرض السعر — ' + catalog.company_name;
+        $('footer').textContent = catalog.company_name;
+        $('vatLabel').textContent = `الضريبة (${catalog.vat_percent}%)`;
+
+        const cats = Object.keys(CATEGORY_LABELS).filter((c) => catalog.products.some((p) => p.category === c));
+        $('categoryChips').innerHTML = cats.map((c) =>
+            `<button class="chip" data-cat="${c}" onclick="selectCategory('${c}')">${CATEGORY_LABELS[c]}</button>`).join('');
+        if (cats.length) selectCategory(cats[0]);
+        renderLines();
+    }
+
+    function selectCategory(cat) {
+        category = cat;
+        document.querySelectorAll('.chip').forEach((b) => b.classList.toggle('active', b.dataset.cat === cat));
+        $('productSelect').innerHTML = catalog.products.filter((p) => p.category === cat)
+            .map((p) => `<option value="${p.id}">${escapeHtml(productLabel(p))}</option>`).join('');
+        renderQuantityInputs();
+    }
+
+    function renderQuantityInputs() {
+        const p = selectedProduct();
+        if (!p) return;
+        const isSlat = p.category === 'slat';
+        const byDims = isSlat && document.querySelector('input[name="slatMode"]:checked').value === 'dims';
+        $('slatMode').hidden = !isSlat;
+        $('dimsInputs').hidden = $('dimsInputs2').hidden = $('piecesInput').hidden = !byDims;
+        $('qtyInput').hidden = byDims;
+        $('qtyLabel').textContent = `الكمية (${UNIT_LABELS[p.unit] || p.unit})`;
+        $('unitPriceHint').textContent = `سعر الوحدة: ${p.unit_price.toFixed(2)} ر.ع / ${UNIT_LABELS[p.unit] || p.unit} (قبل الضريبة)` +
+            (byDims ? ` — كل 1 م² يحتاج ${catalog.sqm_to_linear} متر طولي من الشرائح` : '');
+    }
+
+    function addLine() {
+        const p = selectedProduct();
+        if (!p) return;
+        const byDims = p.category === 'slat' && document.querySelector('input[name="slatMode"]:checked').value === 'dims';
+        let line;
+        if (byDims) {
+            const width = parseFloat($('width').value), height = parseFloat($('height').value);
+            const pieces = parseInt($('pieces').value, 10) || 1;
+            if (!(width > 0 && height > 0)) return alert('يرجى إدخال العرض والارتفاع.');
+            line = { product: p, width, height, pieces, quantity: width * height * pieces * catalog.sqm_to_linear };
+        } else {
+            const quantity = parseFloat($('quantity').value);
+            if (!(quantity > 0)) return alert('يرجى إدخال كمية صحيحة.');
+            line = { product: p, quantity };
+        }
+        lines.push(line);
+        renderLines();
+    }
+
+    function removeLine(i) { lines.splice(i, 1); renderLines(); }
+
+    function renderLines() {
+        const body = $('linesBody');
+        body.innerHTML = lines.map((l, i) => {
+            const unit = UNIT_LABELS[l.product.unit] || l.product.unit;
+            const dims = l.width ? `<br><small>${l.width} × ${l.height} م × ${l.pieces}</small>` : '';
+            return `<tr>
+                <td class="name">${escapeHtml(productLabel(l.product))}${dims}</td>
+                <td>${round2(l.quantity)} ${unit}</td>
+                <td>${l.product.unit_price.toFixed(2)}</td>
+                <td>${round2(l.product.unit_price * l.quantity).toFixed(2)}</td>
+                <td><button class="btn btn-link" onclick="removeLine(${i})" aria-label="حذف">✕</button></td>
+            </tr>`;
+        }).join('');
+        $('emptyLines').hidden = lines.length > 0;
+        $('totals').hidden = lines.length === 0;
+        const subtotal = round2(lines.reduce((s, l) => s + round2(l.product.unit_price * l.quantity), 0));
+        const vat = round2(subtotal * (catalog ? catalog.vat_percent : 0) / 100);
+        $('subtotal').textContent = subtotal.toFixed(2);
+        $('vat').textContent = vat.toFixed(2);
+        $('total').textContent = round2(subtotal + vat).toFixed(2);
+    }
+
+    function showError(msg) { $('errorBox').textContent = msg; $('errorBox').style.display = 'block'; }
+
+    async function submitQuote() {
+        $('errorBox').style.display = 'none';
+        if (!lines.length) return showError('أضف منتجاً واحداً على الأقل.');
+        if (!$('custName').value.trim() || !$('custPhone').value.trim()) return showError('الاسم ورقم الهاتف مطلوبان.');
+
+        const btn = $('submitBtn');
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/public/quotes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    customer_name: $('custName').value,
+                    customer_phone: $('custPhone').value,
+                    customer_city: $('custCity').value,
+                    notes: $('custNotes').value,
+                    items: lines.map((l) => l.width
+                        ? { product_id: l.product.id, width: l.width, height: l.height, pieces: l.pieces }
+                        : { product_id: l.product.id, quantity: l.quantity })
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'تعذر إرسال الطلب');
+            $('quoteRef').textContent = data.ref;
+            $('quoteTotal').textContent = data.total.toFixed(2);
+            $('pdfLink').href = data.pdf_url;
+            if (data.whatsapp_link) { $('waLink').href = data.whatsapp_link; $('waLink').hidden = false; }
+            document.querySelectorAll('main > .card:not(#successCard)').forEach((c) => { c.hidden = true; });
+            $('successCard').hidden = false;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        } catch (err) {
+            showError(err.message);
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    load();
+    </script>
+</body>
+</html>

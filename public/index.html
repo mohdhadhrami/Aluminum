@@ -529,6 +529,63 @@
             animation: fadeIn 0.3s ease;
         }
 
+        /* ===== Admin / database tabs ===== */
+        .app-header { flex-wrap: wrap; gap: 12px; }
+        .tabs { flex-wrap: wrap; }
+        .tab-btn { padding: 8px 14px; }
+        .db-actions { margin-top: 18px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        .status-text { font-size: 0.85rem; color: var(--text-light); }
+        .status-text.ok { color: var(--success); }
+        .status-text.err { color: var(--danger); }
+        .login-bar {
+            position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+            background: var(--primary-dark); color: white; padding: 12px 16px;
+            display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center;
+        }
+        .login-bar[hidden], [hidden] { display: none !important; }
+        .login-bar input { padding: 8px 12px; border-radius: 6px; border: none; font-family: inherit; min-width: 180px; }
+        .login-bar .status-text { color: #f5b7b1; }
+        .filter-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
+        .filter-row select { padding: 8px 12px; border: 2px solid var(--border); border-radius: 8px; font-family: inherit; }
+        .badge {
+            display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 0.78rem; font-weight: 600;
+            background: var(--bg); color: var(--text-light);
+        }
+        .badge.on { background: #e8f8ef; color: var(--success); }
+        .badge.lme { background: #fdf2e7; color: var(--accent); }
+        .form-group textarea {
+            padding: 10px 14px; border: 2px solid var(--border); border-radius: 8px;
+            font-family: inherit; font-size: 0.95rem; background: #fafbfc; resize: vertical;
+        }
+        .check-row { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; font-size: 0.9rem; }
+        .check-row label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+        .form-buttons { margin-top: 16px; display: flex; gap: 10px; flex-wrap: wrap; }
+        .btn-sm { padding: 5px 10px; font-size: 0.8rem; }
+        td.text-start { text-align: right; }
+        .quote-items { font-size: 0.8rem; color: var(--text-light); text-align: right; }
+        .code-box {
+            direction: ltr; text-align: left; background: #1e2a36; color: #d5e4f0; padding: 12px 14px;
+            border-radius: 8px; font-family: Consolas, monospace; font-size: 0.82rem; overflow-x: auto; white-space: pre;
+        }
+        .info-list { padding-inline-start: 20px; font-size: 0.9rem; }
+        .chat-log {
+            background: #e5ddd5; border-radius: 8px; padding: 14px; height: 420px; overflow-y: auto;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .bubble { max-width: 78%; padding: 8px 12px; border-radius: 10px; white-space: pre-wrap; font-size: 0.92rem; box-shadow: 0 1px 1px rgba(0,0,0,0.1); }
+        .bubble.user { align-self: flex-start; background: #dcf8c6; }
+        .bubble.bot { align-self: flex-end; background: #ffffff; }
+        .bubble.event { align-self: center; background: #fff3cd; font-size: 0.82rem; }
+        .chat-input { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+        .chat-input input { flex: 1; min-width: 200px; padding: 10px 14px; border: 2px solid var(--border); border-radius: 8px; font-family: inherit; }
+        .pkg-card { border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+        .pkg-card h4 { color: var(--primary); margin-bottom: 4px; }
+        .pkg-card ul { padding-inline-start: 20px; font-size: 0.88rem; margin: 6px 0 10px; }
+        .pkg-items select, .pkg-items input { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; }
+        .range-box { background: var(--bg); border-radius: 8px; padding: 12px 16px; }
+        .range-box strong { color: var(--accent); font-size: 1.1rem; }
+        .info-list li { margin-bottom: 6px; }
+
         /* ===== Print ===== */
         @media print {
             .app-header, .tabs, .btn, .add-item-form, .tax-toggle {
@@ -548,6 +605,12 @@
         <div class="tabs">
             <button class="tab-btn active" data-tab="pricing" onclick="switchTab('pricing')">حاسبة التسعير</button>
             <button class="tab-btn" data-tab="weight" onclick="switchTab('weight')">حاسبة الوزن</button>
+            <button class="tab-btn" data-tab="products" onclick="switchTab('products')">المنتجات والأسعار</button>
+            <button class="tab-btn" data-tab="purchases" onclick="switchTab('purchases')">أسعار الشراء</button>
+            <button class="tab-btn" data-tab="doors" onclick="switchTab('doors')">أبواب الرول شتر</button>
+            <button class="tab-btn" data-tab="quotes" onclick="switchTab('quotes')">طلبات العروض</button>
+            <button class="tab-btn" data-tab="agent" onclick="switchTab('agent')">المساعد الذكي</button>
+            <button class="tab-btn" data-tab="integrations" onclick="switchTab('integrations')">الربط</button>
         </div>
     </header>
 
@@ -599,6 +662,12 @@
                         <input type="radio" name="taxMode" id="taxIndustrial" value="industrial" onchange="recalculateAll()">
                         <label for="taxIndustrial">صناعي — الضريبة ضمن التكلفة</label>
                     </div>
+                </div>
+
+                <!-- Save to database -->
+                <div class="db-actions">
+                    <button class="btn btn-accent" onclick="saveSettingsToServer()">حفظ الإعدادات في قاعدة البيانات</button>
+                    <span id="settingsStatus" class="status-text"></span>
                 </div>
             </div>
 
@@ -774,11 +843,463 @@
 
         </div>
 
+        <!-- ==================== TAB 3: Products ==================== -->
+        <div id="tab-products" class="tab-content">
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">P</span>
+                    <span id="productFormTitle">إضافة منتج</span>
+                </div>
+                <input type="hidden" id="pId">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>الفئة</label>
+                        <select id="pCategory" onchange="onProductCategoryChange()">
+                            <option value="slat">شرائح ألمنيوم</option>
+                            <option value="accessory">إكسسوارات</option>
+                            <option value="machine">مكائن / مواتير</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>اسم المنتج</label>
+                        <input type="text" id="pName" placeholder="مثال: موتور أنبوبي">
+                    </div>
+                    <div class="form-group">
+                        <label>النوع / الموديل</label>
+                        <input type="text" id="pType" placeholder="مثال: 50 نيوتن">
+                    </div>
+                    <div class="form-group">
+                        <label>وحدة البيع</label>
+                        <select id="pUnit">
+                            <option value="meter">متر</option>
+                            <option value="piece">قطعة</option>
+                            <option value="m2">متر مربع</option>
+                            <option value="set">طقم</option>
+                            <option value="kg">كيلوجرام</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="pPricingModeGroup">
+                        <label>طريقة التسعير</label>
+                        <select id="pPricingMode" onchange="onProductCategoryChange()">
+                            <option value="manual">سعر شراء يدوي</option>
+                            <option value="lme">معادلة LME (تصنيع)</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="pPurchaseGroup">
+                        <label>سعر الشراء <span class="unit">(ر.ع/وحدة)</span></label>
+                        <input type="number" id="pPurchase" min="0" step="0.001" value="0">
+                    </div>
+                    <div class="form-group lme-only">
+                        <label>السماكة <span class="unit">(ملم)</span></label>
+                        <input type="number" id="pThickness" min="0" step="0.1">
+                    </div>
+                    <div class="form-group lme-only">
+                        <label>الوزن <span class="unit">(كجم/متر)</span></label>
+                        <input type="number" id="pWeight" min="0" step="0.001">
+                    </div>
+                    <div class="form-group">
+                        <label>نسبة الربح <span class="unit">(% — فارغ = الافتراضي)</span></label>
+                        <input type="number" id="pProfit" min="0" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label>سعر بيع ثابت <span class="unit">(اختياري)</span></label>
+                        <input type="number" id="pSell" min="0" step="0.01">
+                    </div>
+                    <div class="form-group" style="grid-column: 1 / -1;">
+                        <label>ملاحظات</label>
+                        <input type="text" id="pNotes">
+                    </div>
+                </div>
+                <div class="check-row">
+                    <label class="lme-only"><input type="checkbox" id="pPainted"> مصبوغ</label>
+                    <label><input type="checkbox" id="pPublic" checked> يظهر في حاسبة العملاء</label>
+                    <label><input type="checkbox" id="pActive" checked> مفعّل</label>
+                </div>
+                <div class="form-buttons">
+                    <button class="btn btn-primary" onclick="saveProduct()">حفظ المنتج</button>
+                    <button class="btn btn-outline" onclick="resetProductForm()">جديد</button>
+                    <span id="productStatus" class="status-text"></span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">≡</span>
+                    قائمة المنتجات
+                </div>
+                <div class="filter-row">
+                    <select id="productFilter" onchange="renderProducts()">
+                        <option value="">كل الفئات</option>
+                        <option value="slat">الشرائح</option>
+                        <option value="accessory">الإكسسوارات</option>
+                        <option value="machine">المكائن</option>
+                    </select>
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>الفئة</th>
+                                <th>المنتج</th>
+                                <th>الوحدة</th>
+                                <th>التسعير</th>
+                                <th>التكلفة (ر.ع)</th>
+                                <th>الربح %</th>
+                                <th>سعر البيع (ر.ع)</th>
+                                <th>للعملاء</th>
+                                <th>إجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody id="productsBody"></tbody>
+                    </table>
+                    <div id="productsEmpty" class="empty-message">لا توجد منتجات.</div>
+                </div>
+            </div>
+
+            <div class="card" id="historyCard" hidden>
+                <div class="card-title">
+                    <span class="icon">H</span>
+                    <span id="historyTitle">سجل الأسعار</span>
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead><tr><th>التاريخ</th><th>الحقل</th><th>القيمة السابقة</th><th>القيمة الجديدة</th><th>المصدر</th></tr></thead>
+                        <tbody id="historyBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB 4: Purchases ==================== -->
+        <div id="tab-purchases" class="tab-content">
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">+</span>
+                    تسجيل سعر شراء (فاتورة مورد)
+                </div>
+                <div class="form-grid">
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label>المنتج</label>
+                        <select id="buyProduct"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>المورد</label>
+                        <input type="text" id="buySupplier">
+                    </div>
+                    <div class="form-group">
+                        <label>التاريخ</label>
+                        <input type="date" id="buyDate">
+                    </div>
+                    <div class="form-group">
+                        <label>الكمية</label>
+                        <input type="number" id="buyQty" min="0" step="0.01" value="1">
+                    </div>
+                    <div class="form-group">
+                        <label>سعر الوحدة <span class="unit">(بعملة الفاتورة)</span></label>
+                        <input type="number" id="buyPrice" min="0" step="0.001" oninput="previewLandedCost()">
+                    </div>
+                    <div class="form-group">
+                        <label>العملة</label>
+                        <select id="buyCurrency" onchange="onCurrencyChange()">
+                            <option value="OMR">ريال عماني</option>
+                            <option value="USD">دولار</option>
+                            <option value="AED">درهم إماراتي</option>
+                            <option value="SAR">ريال سعودي</option>
+                            <option value="CNY">يوان صيني</option>
+                            <option value="EUR">يورو</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>سعر الصرف <span class="unit">(ر.ع لكل وحدة عملة)</span></label>
+                        <input type="number" id="buyRate" min="0" step="0.0001" value="1" oninput="previewLandedCost()">
+                    </div>
+                    <div class="form-group">
+                        <label>مصاريف إضافية للوحدة <span class="unit">(شحن/جمارك — ر.ع)</span></label>
+                        <input type="number" id="buyExtra" min="0" step="0.001" value="0" oninput="previewLandedCost()">
+                    </div>
+                    <div class="form-group">
+                        <label>ملاحظات / رقم الفاتورة</label>
+                        <input type="text" id="buyNotes">
+                    </div>
+                </div>
+                <div class="check-row">
+                    <label><input type="checkbox" id="buyUpdate" checked> تحديث سعر الشراء في بطاقة المنتج</label>
+                </div>
+                <div class="form-buttons">
+                    <button class="btn btn-primary" onclick="savePurchase()">تسجيل</button>
+                    <span id="buyPreview" class="status-text"></span>
+                    <span id="buyStatus" class="status-text"></span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">≡</span>
+                    سجل المشتريات
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>التاريخ</th>
+                                <th>المنتج</th>
+                                <th>المورد</th>
+                                <th>الكمية</th>
+                                <th>سعر الوحدة</th>
+                                <th>التكلفة النهائية (ر.ع)</th>
+                                <th>ملاحظات</th>
+                                <th>حذف</th>
+                            </tr>
+                        </thead>
+                        <tbody id="purchasesBody"></tbody>
+                    </table>
+                    <div id="purchasesEmpty" class="empty-message">لا توجد مشتريات مسجلة.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB: Roller shutter door packages ==================== -->
+        <div id="tab-doors" class="tab-content">
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">?</span>
+                    تجربة التسعير — نفس الأرقام التي يعطيها المساعد الذكي
+                </div>
+                <div class="form-grid">
+                    <div class="form-group"><label>العرض <span class="unit">(سم)</span></label><input type="number" id="pvWidth" value="300"></div>
+                    <div class="form-group"><label>الارتفاع <span class="unit">(سم)</span></label><input type="number" id="pvHeight" value="250"></div>
+                    <div class="form-group"><label>عدد الأبواب</label><input type="number" id="pvCount" value="1" min="1"></div>
+                    <div class="form-group"><label>النوع</label><select id="pvType"></select></div>
+                    <div class="form-group"><label>الولاية</label><select id="pvRegion"><option value="">— بدون —</option></select></div>
+                    <div class="form-group" style="justify-content:flex-end;"><button class="btn btn-primary" onclick="previewDoor()">احسب</button></div>
+                </div>
+                <div id="pvResult" style="margin-top: 14px;"></div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">D</span>
+                    <span id="pkgFormTitle">إضافة باقة باب</span>
+                </div>
+                <input type="hidden" id="pkgId">
+                <div class="form-grid">
+                    <div class="form-group"><label>نوع الباب <span class="unit">(مثل يدوي / كهربائي)</span></label><input type="text" id="pkgType" list="doorTypesList"><datalist id="doorTypesList"></datalist></div>
+                    <div class="form-group"><label>اسم الباقة</label><input type="text" id="pkgName"></div>
+                    <div class="form-group"><label>الشرائح المستخدمة</label><select id="pkgSlat"></select></div>
+                    <div class="form-group"><label>أقل مساحة <span class="unit">(م² — اختياري)</span></label><input type="number" id="pkgMin" step="0.1"></div>
+                    <div class="form-group"><label>أكبر مساحة <span class="unit">(م² — اختياري)</span></label><input type="number" id="pkgMax" step="0.1"></div>
+                    <div class="form-group"><label>الترتيب</label><input type="number" id="pkgSort" value="0"></div>
+                    <div class="form-group" style="grid-column: 1 / -1;"><label>الوصف <span class="unit">(يستخدمه المساعد لشرح الفروقات)</span></label><input type="text" id="pkgDesc"></div>
+                </div>
+                <p style="margin: 16px 0 8px; font-weight: 600;">المكونات <span class="status-text">— الكمية = المعامل × (1 أو العرض أو الارتفاع أو المساحة بالمتر) × عدد الأبواب</span></p>
+                <div class="table-wrapper">
+                    <table>
+                        <thead><tr><th>المنتج</th><th>حساب الكمية</th><th>المعامل</th><th>اختياري</th><th></th></tr></thead>
+                        <tbody id="pkgItemsBody"></tbody>
+                    </table>
+                </div>
+                <div class="check-row">
+                    <label><input type="checkbox" id="pkgActive" checked> مفعّلة</label>
+                </div>
+                <div class="form-buttons">
+                    <button class="btn btn-outline" onclick="addPkgItemRow()">+ مكوّن</button>
+                    <button class="btn btn-primary" onclick="savePackage()">حفظ الباقة</button>
+                    <button class="btn btn-outline" onclick="resetPackageForm()">جديد</button>
+                    <span id="pkgStatus" class="status-text"></span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">≡</span>
+                    الباقات
+                </div>
+                <div id="packagesList"></div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">M</span>
+                    الولايات ورسوم التوصيل والتركيب
+                </div>
+                <p class="status-text" style="margin-bottom: 10px;">اترك الحقل فارغاً إذا كانت الرسوم تُحدد بعد المعاينة. رسوم التركيب لكل باب، والتوصيل مرة واحدة للطلب.</p>
+                <div class="filter-row"><input type="text" id="regionFilter" placeholder="بحث..." oninput="renderRegions()" style="padding: 8px 12px; border: 2px solid var(--border); border-radius: 8px; font-family: inherit;"></div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead><tr><th>المحافظة</th><th>الولاية</th><th>التوصيل (ر.ع)</th><th>التركيب لكل باب (ر.ع)</th><th></th></tr></thead>
+                        <tbody id="regionsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB: AI agent console ==================== -->
+        <div id="tab-agent" class="tab-content">
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">AI</span>
+                    تجربة المساعد الذكي (نفس مساعد واتساب)
+                </div>
+                <p style="margin-bottom: 12px;">الحالة: <span id="agentStatus" class="badge">—</span> <span id="agentModel" class="status-text"></span></p>
+                <div id="chatLog" class="chat-log"></div>
+                <div class="chat-input">
+                    <input type="text" id="chatInput" placeholder="اكتب كأنك عميل... مثال: أبغى باب رول شتر لمحل" onkeydown="if(event.key==='Enter')sendChat()">
+                    <button class="btn btn-primary" id="chatSend" onclick="sendChat()">إرسال</button>
+                    <button class="btn btn-outline" onclick="resetChat()">محادثة جديدة</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB 5: Quote requests ==================== -->
+        <div id="tab-quotes" class="tab-content">
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">Q</span>
+                    طلبات عروض الأسعار من العملاء
+                </div>
+                <div class="filter-row">
+                    <select id="quoteFilter" onchange="loadQuotes()">
+                        <option value="">كل الحالات</option>
+                        <option value="new">جديد</option>
+                        <option value="contacted">تم التواصل</option>
+                        <option value="accepted">مقبول</option>
+                        <option value="rejected">مرفوض</option>
+                        <option value="done">مكتمل</option>
+                    </select>
+                    <button class="btn btn-outline btn-sm" onclick="loadQuotes()">تحديث</button>
+                    <a class="btn btn-accent btn-sm" href="calculator.html" target="_blank">فتح حاسبة العملاء</a>
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>الرقم</th>
+                                <th>التاريخ</th>
+                                <th>العميل</th>
+                                <th>الهاتف</th>
+                                <th>البنود</th>
+                                <th>الإجمالي (ر.ع)</th>
+                                <th>المصدر</th>
+                                <th>الحالة</th>
+                                <th>PDF</th>
+                            </tr>
+                        </thead>
+                        <tbody id="quotesBody"></tbody>
+                    </table>
+                    <div id="quotesEmpty" class="empty-message">لا توجد طلبات بعد.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB 6: Integrations ==================== -->
+        <div id="tab-integrations" class="tab-content">
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">⚙</span>
+                    بيانات الشركة
+                </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>اسم الشركة</label>
+                        <input type="text" id="companyName">
+                    </div>
+                    <div class="form-group">
+                        <label>رقم واتساب الشركة <span class="unit">(مثل 9689XXXXXXX)</span></label>
+                        <input type="tel" id="companyWhatsapp">
+                    </div>
+                    <div class="form-group">
+                        <label>رابط الموقع العام</label>
+                        <input type="url" id="publicBaseUrl" placeholder="https://example.com">
+                    </div>
+                    <div class="form-group">
+                        <label>متر طولي لكل م²</label>
+                        <input type="number" id="sqmToLinear" min="1" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label>صلاحية عرض السعر <span class="unit">(يوم)</span></label>
+                        <input type="number" id="quoteValidity" min="1" step="1">
+                    </div>
+                </div>
+                <div class="db-actions">
+                    <button class="btn btn-accent" onclick="saveSettingsToServer()">حفظ</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">W</span>
+                    ربط واتساب (WhatsApp Cloud API)
+                </div>
+                <p style="margin-bottom: 10px;">الحالة: <span id="waStatus" class="badge">—</span></p>
+                <ul class="info-list">
+                    <li>رابط الـ Webhook الذي تضعه في لوحة Meta: <code id="waWebhookUrl"></code></li>
+                    <li>تُضبط المفاتيح في ملف <code>.env</code> على الخادم (راجع README).</li>
+                    <li>عند وصول طلب عرض سعر، يُرسل ملخصه إلى رقم الإدارة وإلى العميل.</li>
+                    <li>إذا راسل العميل الرقم بكلمة «الأسعار» يرد النظام تلقائياً بقائمة الأسعار.</li>
+                </ul>
+                <div class="form-buttons">
+                    <button class="btn btn-outline" onclick="previewPriceList()">معاينة رسالة قائمة الأسعار</button>
+                </div>
+                <div id="priceListPreview" class="code-box" style="direction: rtl; text-align: right; white-space: pre-wrap; margin-top: 12px;" hidden></div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">↗</span>
+                    Webhooks (n8n / Make / Zapier / أي نظام)
+                </div>
+                <input type="hidden" id="hookId">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>الاسم</label>
+                        <input type="text" id="hookName" placeholder="مثال: n8n واتساب">
+                    </div>
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label>الرابط (URL)</label>
+                        <input type="url" id="hookUrl" placeholder="https://...">
+                    </div>
+                    <div class="form-group">
+                        <label>المفتاح السري <span class="unit">(للتوقيع — اختياري)</span></label>
+                        <input type="text" id="hookSecret">
+                    </div>
+                </div>
+                <div class="check-row" id="hookEvents"></div>
+                <div class="form-buttons">
+                    <button class="btn btn-primary" onclick="saveHook()">حفظ الـ Webhook</button>
+                    <button class="btn btn-outline" onclick="resetHookForm()">جديد</button>
+                    <span id="hookStatus" class="status-text"></span>
+                </div>
+                <div class="table-wrapper" style="margin-top: 16px;">
+                    <table>
+                        <thead><tr><th>الاسم</th><th>الرابط</th><th>الأحداث</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+                        <tbody id="hooksBody"></tbody>
+                    </table>
+                    <div id="hooksEmpty" class="empty-message">لا توجد Webhooks.</div>
+                </div>
+                <p style="margin: 16px 0 6px; font-weight: 600;">شكل البيانات المرسلة:</p>
+                <div class="code-box">POST &lt;your URL&gt;
+X-Aluminum-Event: quote.created
+X-Aluminum-Signature: sha256=HMAC_SHA256(secret, body)
+
+{ "id": "…", "event": "quote.created", "created_at": "…",
+  "data": { "ref": "Q260925-A1B2C3", "customer_name": "…", "customer_phone": "968…",
+            "items": [ … ], "subtotal": 0, "vat": 0, "total": 0 } }</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Login overlay for the admin API -->
+    <div id="loginBar" class="login-bar" hidden>
+        <span>لوحة الإدارة تحتاج رمز الدخول (ADMIN_TOKEN):</span>
+        <input type="password" id="adminToken" placeholder="رمز الدخول" onkeydown="if(event.key==='Enter')login()">
+        <button class="btn btn-primary" onclick="login()">دخول</button>
+        <span id="loginStatus" class="status-text"></span>
     </div>
 
     <!-- Footer -->
     <footer class="app-footer">
-        نظام تسعير شرائح الألمنيوم — يعمل محلياً بالكامل بدون اتصال بالإنترنت
+        نظام تسعير شرائح الألمنيوم — <a href="calculator.html" target="_blank">حاسبة العملاء</a>
     </footer>
 
     <script>
@@ -1257,5 +1778,6 @@
        ============================================================= */
     calcWeight();
     </script>
+    <script src="admin.js"></script>
 </body>
 </html>
