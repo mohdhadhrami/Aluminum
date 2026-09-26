@@ -185,7 +185,7 @@ npm start
    - الفرع: `claude/offline-industrial-app-hBMUY` (الفرع الرئيسي)
    - إصدار Node.js: **22 أو أحدث**. هذا ضروري، لأن النظام لا يعمل على الإصدارات الأقدم.
    - أمر البناء: اتركه فارغاً، أو `npm install`
-   - ملف التشغيل (Entry file): `src/server.js`
+   - ملف التشغيل (Entry file): `app.js`
 3. **متغيرات البيئة (Environment variables):**
 
    | المتغير | القيمة |

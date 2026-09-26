@@ -766,18 +766,30 @@ function createApp(db) {
     return app;
 }
 
-if (require.main === module) {
+let started = false;
+
+function start() {
+    if (started) return; // may be reached twice (auto-start + app.js); listen only once
+    started = true;
     try { process.loadEnvFile(); } catch { /* .env is optional */ }
     const db = openDatabase();
-    const port = Number(process.env.PORT) || 3000;
-    createApp(db).listen(port, () => {
-        console.log(`Aluminum pricing server on http://localhost:${port}`);
-        console.log(`  • لوحة الإدارة:      http://localhost:${port}/`);
-        console.log(`  • حاسبة العملاء:     http://localhost:${port}/calculator.html`);
-        if (!process.env.ADMIN_TOKEN) console.warn('  ! ADMIN_TOKEN غير مضبوط — واجهة الإدارة مقفلة');
+    // PORT is usually a number; some hosting runners pass a socket path instead
+    const port = process.env.PORT || 3000;
+    createApp(db).listen(/^\d+$/.test(String(port)) ? Number(port) : port, () => {
+        console.log(`Aluminum pricing server listening on ${port} (Node ${process.versions.node})`);
+        console.log(`  • حاسبة العملاء:  /`);
+        console.log(`  • لوحة الإدارة:   /admin`);
+        if (!process.env.ADMIN_TOKEN) console.warn('  ! ADMIN_TOKEN غير مضبوط — لوحة الإدارة مقفلة');
         console.log(`  • واتساب: ${whatsapp.isConfigured() ? 'مفعّل' : 'غير مفعّل'}`);
         console.log(`  • المساعد الذكي: ${agent.isConfigured() ? 'مفعّل' : 'غير مفعّل (ANTHROPIC_API_KEY)'}`);
     });
 }
 
-module.exports = { createApp, saveQuote };
+/* Start when run directly (node src/server.js), and also when a hosting runner outside this
+   project loads the file (shared hosting wraps the entry file, so require.main is the runner).
+   Files inside the project (app.js, tests) decide for themselves. */
+const projectRoot = path.join(__dirname, '..');
+const loadedByOutsideRunner = !require.main || !require.main.filename.startsWith(projectRoot + path.sep);
+if (require.main === module || loadedByOutsideRunner) start();
+
+module.exports = { createApp, saveQuote, start };
