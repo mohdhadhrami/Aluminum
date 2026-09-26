@@ -3,6 +3,14 @@
    ============================================================= */
 const path = require('node:path');
 const crypto = require('node:crypto');
+// The built-in SQLite database needs Node.js 22.13 or newer — say so clearly instead of crashing
+{
+    const [major, minor] = process.versions.node.split('.').map(Number);
+    if (major < 22 || (major === 22 && minor < 13)) {
+        console.error(`Node.js ${process.versions.node} is too old: this system needs Node.js 22.13+ (اختر Node.js 22 أو أحدث في إعدادات الاستضافة).`);
+        process.exit(1);
+    }
+}
 const express = require('express');
 const { openDatabase, getSettings, saveSettings } = require('./db');
 const { unitCost, unitSellPrice, priceQuote, round2 } = require('./pricing');
@@ -188,6 +196,12 @@ function createApp(db) {
     });
 
     const getProduct = (id) => db.prepare('SELECT * FROM products WHERE id = ?').get(Number(id));
+
+    /* Status check for the hosting panel / uptime monitors */
+    app.get('/healthz', (req, res) => {
+        db.prepare('SELECT 1').get();
+        res.json({ ok: true, node: process.versions.node });
+    });
 
     /* ------------------------- Public API ------------------------- */
 

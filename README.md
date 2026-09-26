@@ -176,6 +176,32 @@ npm start
 - يُحفظ الجزء الثابت من التعليمات مؤقتاً (Prompt caching) لتقليل التكلفة.
 - تُحفظ المحادثة 24 ساعة ثم تبدأ من جديد.
 
+## النشر على استضافة Hostinger Business (بدون VPS)
+
+خطة Business في Hostinger تشغّل تطبيقات Node.js مباشرة من hPanel، وتسحبها من GitHub.
+
+1. **أنشئ التطبيق:** في hPanel افتح **Websites** ← **Add Website** ← **Node.js web app** ← **Import Git repository**، ثم اربط GitHub واختر المستودع `mohdhadhrami/Aluminum`.
+2. **إعدادات النشر:**
+   - الفرع: `claude/offline-industrial-app-hBMUY` (الفرع الرئيسي)
+   - إصدار Node.js: **22 أو أحدث**. هذا ضروري، لأن النظام لا يعمل على الإصدارات الأقدم.
+   - أمر البناء: اتركه فارغاً، أو `npm install`
+   - ملف التشغيل (Entry file): `src/server.js`
+3. **متغيرات البيئة (Environment variables):**
+
+   | المتغير | القيمة |
+   |---|---|
+   | `ADMIN_TOKEN` | كلمة مرور طويلة للإدارة من اختيارك |
+   | `DB_FILE` | `~/radma-data/aluminum.db` |
+   | `TRUST_PROXY` | `1` |
+   | `EMBED_ALLOWED_ORIGINS` | `https://radma.co https://www.radma.co` |
+
+   قيمة `DB_FILE` تحفظ قاعدة البيانات في مجلد الحساب الرئيسي، خارج مجلد التطبيق، فلا تُستبدل عند إعادة النشر.
+4. **النطاق:** اربط التطبيق بالنطاق الفرعي `calc.radma.co`، وفعّل SSL من hPanel.
+5. **تحقق من التشغيل:** افتح `https://calc.radma.co/healthz`. يجب أن يظهر `{"ok":true,...}` مع رقم إصدار Node.
+6. **اضبط الرابط العام:** ادخل `https://calc.radma.co/admin`، ثم في تبويب «الربط» ضع «رابط الموقع العام» = `https://calc.radma.co`.
+
+كل دمج جديد في الفرع الرئيسي على GitHub يُنشر تلقائياً. إذا ظهر خطأ، راجع سجلات التطبيق (Logs) في hPanel.
+
 ## النشر على نطاق فرعي (Hostinger VPS)
 
 بعد النشر يصبح النظام بهذا الشكل:
