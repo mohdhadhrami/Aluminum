@@ -39,6 +39,7 @@ async function api(method, url, body) {
     });
     if (res.status === 401 || res.status === 503) {
         $id('loginBar').hidden = false;
+        setTimeout(() => $id('adminToken').focus(), 0);
         const data = await res.json().catch(() => ({}));
         setStatus('loginStatus', data.error || '');
         throw new Error(data.error || 'غير مصرح');
@@ -48,6 +49,11 @@ async function api(method, url, body) {
     const data = ct.includes('json') ? await res.json() : await res.text();
     if (!res.ok) throw new Error((data && data.error) || 'حدث خطأ');
     return data;
+}
+
+function logout() {
+    try { localStorage.removeItem('adminToken'); } catch { /* ignore */ }
+    location.reload();
 }
 
 async function login() {

@@ -28,7 +28,7 @@ if not exist node_modules (
 )
 
 rem Open the browser a few seconds after the server starts
-start "" cmd /c "timeout /t 4 >nul & start http://localhost:3000"
+start "" cmd /c "timeout /t 4 >nul & start http://localhost:3000/admin"
 
 echo   Keep this window open while using the system. Close it to stop.
 echo   اترك هذه النافذة مفتوحة أثناء استخدام النظام

@@ -17,7 +17,7 @@ if [ ! -d node_modules ]; then
 fi
 
 # Open the browser a few seconds after the server starts
-( sleep 4; open http://localhost:3000 2>/dev/null || xdg-open http://localhost:3000 2>/dev/null ) &
+( sleep 4; open http://localhost:3000/admin 2>/dev/null || xdg-open http://localhost:3000/admin 2>/dev/null ) &
 
 echo "  اترك هذه النافذة مفتوحة أثناء استخدام النظام. أغلقها للإيقاف."
 npm start

@@ -300,7 +300,15 @@ function migrate(db) {
     addColumns('shutter_colors', { variant_id: 'INTEGER', price_per_m2: 'REAL', fixed_fee: 'REAL NOT NULL DEFAULT 0' });
 }
 
+/* "~/radma-data/aluminum.db" → the account's home folder. On shared hosting this keeps the
+   database outside the app folder, so redeploying the code never replaces it. */
+function resolveDbPath(file) {
+    if (file === ':memory:') return file;
+    return file.startsWith('~/') ? path.join(require('node:os').homedir(), file.slice(2)) : file;
+}
+
 function openDatabase(file = process.env.DB_FILE || path.join(__dirname, '..', 'data', 'aluminum.db')) {
+    file = resolveDbPath(file);
     if (file !== ':memory:') {
         fs.mkdirSync(path.dirname(file), { recursive: true });
     }
