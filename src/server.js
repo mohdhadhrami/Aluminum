@@ -248,7 +248,7 @@ function createApp(db) {
         res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
         // Never let a hosting CDN keep stale copies: PDFs, API data and the health check are
         // always fresh; pages, scripts and styles must be revalidated (cheap, thanks to ETags).
-        if (req.path.startsWith('/api/') || req.path.startsWith('/quotes/') || req.path === '/healthz') {
+        if (req.path.startsWith('/api/') || req.path.startsWith('/quotes/') || req.path.startsWith('/webhooks/') || req.path === '/healthz') {
             res.setHeader('Cache-Control', 'no-store');
         } else if (!/\.(png|jpe?g|webp|gif|svg|ico|woff2?)$/i.test(req.path)) {
             res.setHeader('Cache-Control', 'no-cache');
@@ -860,6 +860,15 @@ function createApp(db) {
         recipients: mazbot.parseRecipients(getSettings(db).mazbot_recipients)
     }));
 
+    /* The webhook address to paste in MazBot, and the latest requests it received */
+    admin.get('/mazbot/inbound', (req, res) => {
+        const secret = process.env.MAZBOT_WEBHOOK_SECRET || '';
+        res.json({
+            webhook_path: secret.length >= 16 ? `/webhooks/mazbot/${secret}` : null,
+            events: db.prepare('SELECT * FROM inbound_events ORDER BY id DESC LIMIT 20').all()
+        });
+    });
+
     /* Test message with sample values: ?calculator=overhead tests the overhead template */
     admin.post('/mazbot/test', asyncRoute(async (req, res) => {
         const calculator = req.query.calculator === 'overhead' ? 'overhead' : 'rolling_shutter';
@@ -962,6 +971,25 @@ function createApp(db) {
     app.use('/api/admin', admin);
 
     whatsapp.registerRoutes(app, db, { saveQuote: (q) => saveQuote(db, q) });
+
+    /* MazBot webhook (step 1): record exactly what MazBot sends, so the AI agent can be wired to
+       its real format. The secret in the path is the access control (MAZBOT_WEBHOOK_SECRET). */
+    const webhookSecretOk = (given) => {
+        const secret = process.env.MAZBOT_WEBHOOK_SECRET || '';
+        return secret.length >= 16 && given.length === secret.length &&
+            crypto.timingSafeEqual(Buffer.from(given), Buffer.from(secret));
+    };
+    app.all('/webhooks/mazbot/:secret', express.raw({ type: () => true, limit: '1mb' }), (req, res) => {
+        if (!webhookSecretOk(String(req.params.secret))) return res.status(404).json({ error: 'غير موجود' });
+        const raw = req.rawBody || (Buffer.isBuffer(req.body) ? req.body : null);
+        const body = raw && raw.length ? raw.toString('utf8') : (req.body && !Buffer.isBuffer(req.body) ? JSON.stringify(req.body) : '');
+        const headers = Object.fromEntries(Object.entries(req.headers)
+            .filter(([k]) => !['cookie', 'authorization'].includes(k)));
+        db.prepare(`INSERT INTO inbound_events (source, method, content_type, headers_json, body) VALUES ('mazbot', ?, ?, ?, ?)`)
+            .run(req.method, req.get('content-type') || null, JSON.stringify({ ...headers, query: req.query }), body.slice(0, 100_000));
+        db.prepare(`DELETE FROM inbound_events WHERE id NOT IN (SELECT id FROM inbound_events ORDER BY id DESC LIMIT 100)`).run();
+        res.json({ ok: true });
+    });
     // Pages: the customer calculator is the site's home page (shareable link, no password);
     // the admin panel lives at /admin and asks for the admin password.
     const publicDir = path.join(__dirname, '..', 'public');

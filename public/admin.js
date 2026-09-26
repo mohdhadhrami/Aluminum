@@ -1013,6 +1013,23 @@ async function loadMazbotStatus() {
     $id('mazbotOverheadStatus').className = 'badge' + (s.overhead_configured ? ' on' : '');
 }
 
+async function loadInbound() {
+    const r = await api('GET', '/api/admin/mazbot/inbound');
+    $id('mazbotWebhookUrl').value = r.webhook_path ? location.origin + r.webhook_path : 'غير مفعّل — أضف MAZBOT_WEBHOOK_SECRET (16 حرفاً أو أكثر) في متغيرات البيئة';
+    const pretty = (text) => { try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; } };
+    $id('inboundList').innerHTML = r.events.length ? r.events.map((e) => `
+        <details style="margin-bottom:6px; border:1px solid var(--border); border-radius:8px; padding:8px 12px">
+            <summary>${esc(e.received_at)} — ${esc(e.method)} — ${esc(e.content_type || '')}</summary>
+            <pre dir="ltr" style="white-space:pre-wrap; word-break:break-all; font-size:12px; max-height:320px; overflow:auto">${esc(pretty(e.body || ''))}</pre>
+        </details>`).join('') : '<p class="status-text">لم تصل أي رسالة بعد.</p>';
+}
+
+function copyWebhookUrl() {
+    const input = $id('mazbotWebhookUrl');
+    input.select();
+    navigator.clipboard.writeText(input.value).catch(() => document.execCommand('copy'));
+}
+
 async function testMazbot(calculator) {
     setStatus('mazbotTestStatus', 'جاري الإرسال...');
     try {
@@ -1068,6 +1085,7 @@ window.switchTab = function (tabId) {
     if (tabId === 'products') renderProducts();
     if (tabId === 'doors') { loadDoors(); loadBackups().catch(() => {}); }
     if (tabId === 'overhead') loadOverhead();
+    if (tabId === 'integrations') loadInbound().catch(() => {});
 };
 
 async function initAdmin() {
