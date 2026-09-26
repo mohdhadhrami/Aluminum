@@ -33,7 +33,8 @@ test('overhead calculator starts with the company site data', async (t) => {
     assert.deepStrictEqual(conf.gate_types.map((g) => g.name), ['Type A', 'Type B']);
     const [a, b] = conf.gate_types;
     assert.deepStrictEqual(a.heights.map((h) => [h.height_cm, h.widths]), [[250, [415, 455, 615]], [300, [415, 455, 615]]]);
-    assert.deepStrictEqual(b.heights.map((h) => [h.height_cm, h.widths]), [[250, [370, 440, 550, 600]]]);
+    // Both types come in 250 and 300 cm (Type B 300 cm with default prices to be edited in the admin)
+    assert.deepStrictEqual(b.heights.map((h) => [h.height_cm, h.widths]), [[250, [370, 440, 550, 600]], [300, [370, 440, 550, 600]]]);
     assert.deepStrictEqual(conf.motors.map((m) => m.name), ['المكينة الإيطالية 1200N', 'المكينة الإيطالية 1000N', 'المكينة الصينية 1500N']);
     assert.ok(wilayah(conf, 'نزوى') && wilayah(conf, 'عبري'));
     // Public data never carries prices before the customer asks
@@ -96,7 +97,7 @@ test('admin edits overhead sizes, motors and the installation fee per wilayah', 
     t.after(() => server.close());
     assert.strictEqual((await call('GET', '/api/admin/overhead', null, 'wrong')).status, 401);
     const { body: data } = await call('GET', '/api/admin/overhead');
-    assert.strictEqual(data.sizes.length, 10);
+    assert.strictEqual(data.sizes.length, 14);
 
     const sizes = data.sizes.map((s) => (s.gate_type === 'Type B' && s.width_cm === 370 ? { ...s, price_from: 280, price_to: 300 } : s));
     const motors = [...data.motors, { name: 'محرك تجريبي', price: 99, active: false }];
@@ -117,4 +118,19 @@ test('admin edits overhead sizes, motors and the installation fee per wilayah', 
 
     // The old "import site prices" action does not exist (it would overwrite the admin's prices)
     assert.strictEqual((await call('POST', '/api/admin/import/radma-overhead')).status, 404);
+});
+
+test('an existing database gets the default Type B 300 cm sizes once, not again after the admin deletes them', () => {
+    const { addDefaultOverheadSizes } = require('../src/radma-catalog');
+    const db = openDatabase(':memory:');
+    const b300 = () => db.prepare("SELECT COUNT(*) AS n FROM overhead_sizes WHERE gate_type = 'Type B' AND height_cm = 300").get().n;
+    // A database from before this version: no Type B 300 rows, no flag; an edited Type A price
+    db.exec("DELETE FROM overhead_sizes WHERE gate_type = 'Type B' AND height_cm = 300; DELETE FROM settings WHERE key = 'overhead_defaults_v1'");
+    db.exec("UPDATE overhead_sizes SET price_from = 999 WHERE gate_type = 'Type A' AND width_cm = 415 AND height_cm = 250");
+    addDefaultOverheadSizes(db);
+    assert.strictEqual(b300(), 4);
+    assert.strictEqual(db.prepare("SELECT price_from FROM overhead_sizes WHERE gate_type = 'Type A' AND width_cm = 415 AND height_cm = 250").get().price_from, 999);
+    db.exec("DELETE FROM overhead_sizes WHERE gate_type = 'Type B' AND height_cm = 300");
+    addDefaultOverheadSizes(db);
+    assert.strictEqual(b300(), 0);
 });

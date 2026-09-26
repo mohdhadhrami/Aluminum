@@ -127,8 +127,27 @@ function applyRadmaCatalog(db) {
 const OVERHEAD_SIZES = [
     ['Type A', 250, 415, 355, 375], ['Type A', 250, 455, 370, 385], ['Type A', 250, 615, 470, 485],
     ['Type A', 300, 415, 465, 495], ['Type A', 300, 455, 485, 505], ['Type A', 300, 615, 625, 635],
-    ['Type B', 250, 370, 270, 290], ['Type B', 250, 440, 295, 315], ['Type B', 250, 550, 320, 345], ['Type B', 250, 600, 350, 380]
+    ['Type B', 250, 370, 270, 290], ['Type B', 250, 440, 295, 315], ['Type B', 250, 550, 320, 345], ['Type B', 250, 600, 350, 380],
 ];
+
+/* Type B at 300 cm is not in the site's calculator: default prices (≈ ×1.3 of 250 cm, like Type A)
+   to be replaced by the real prices in the admin panel */
+const OVERHEAD_DEFAULT_SIZES = [
+    ['Type B', 300, 370, 350, 375], ['Type B', 300, 440, 385, 410], ['Type B', 300, 550, 415, 450], ['Type B', 300, 600, 455, 495]
+];
+OVERHEAD_SIZES.push(...OVERHEAD_DEFAULT_SIZES);
+
+/* Existing databases get the default Type B 300 cm sizes once (not again if the admin deletes them) */
+function addDefaultOverheadSizes(db) {
+    const flag = db.prepare("SELECT 1 FROM settings WHERE key = 'overhead_defaults_v1'").get();
+    if (flag) return;
+    const exists = db.prepare('SELECT 1 FROM overhead_sizes WHERE gate_type = ? AND height_cm = ? AND width_cm = ?');
+    const next = db.prepare('SELECT IFNULL(MAX(sort_order), -1) + 1 AS n FROM overhead_sizes').get().n;
+    const insert = db.prepare(`INSERT INTO overhead_sizes (gate_type, height_cm, width_cm, price_from, price_to, sort_order)
+                               VALUES (?, ?, ?, ?, ?, ?)`);
+    OVERHEAD_DEFAULT_SIZES.forEach((row, i) => { if (!exists.get(row[0], row[1], row[2])) insert.run(...row, next + i); });
+    db.prepare("INSERT INTO settings (key, value) VALUES ('overhead_defaults_v1', 'true')").run();
+}
 
 const OVERHEAD_MOTORS = [
     ['المكينة الإيطالية 1200N', 145],
@@ -172,6 +191,6 @@ function applyOverheadCatalog(db) {
 }
 
 module.exports = {
-    applyRadmaCatalog, applyOverheadCatalog, SHUTTER_TYPES, INSTALLATION,
+    applyRadmaCatalog, applyOverheadCatalog, addDefaultOverheadSizes, SHUTTER_TYPES, INSTALLATION,
     OVERHEAD_SIZES, OVERHEAD_MOTORS, OVERHEAD_INSTALLATION
 };
