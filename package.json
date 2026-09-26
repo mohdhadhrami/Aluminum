@@ -2,14 +2,14 @@
   "name": "aluminum-pricing",
   "version": "2.0.0",
   "description": "نظام تسعير شرائح الألمنيوم والإكسسوارات والمكائن — قاعدة بيانات، Webhooks، واتساب، وحاسبة عروض أسعار للعملاء",
-  "main": "src/server.js",
+  "main": "app.js",
   "private": true,
   "engines": {
     "node": ">=22.13"
   },
   "scripts": {
     "prestart": "node scripts/setup.js",
-    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "start": "node --disable-warning=ExperimentalWarning app.js",
     "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
   },
