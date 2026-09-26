@@ -160,15 +160,23 @@ function renderQuotePdf(quote, settings, out) {
     let y = 110;
     const details = quote.details || {};
     const infoRows = [
-        ['العميل', quote.customer_name],
-        ['الجوال', quote.customer_phone],
+        ['اسم العميل', quote.customer_name],
+        ['رقم الجوال', quote.customer_phone],
         ['الموقع', quote.customer_city || details.region || '—']
     ];
-    // Door configuration: spec pairs (current quotes) or the older size/package fields
-    const spec = Array.isArray(details.spec) ? details.spec.slice() : [];
-    if (!spec.length && details.width_cm) {
-        spec.push(['المقاس', `العرض ${details.width_cm} سم — الارتفاع ${details.height_cm} سم — عدد الأبواب ${details.count}`]);
-        if (details.package_name) spec.push(['النوع', `${details.door_type} — ${details.package_name}`]);
+    // Door basics only (gate type and size); the color and accessories are listed in the items table
+    const spec = [];
+    const given = new Map(Array.isArray(details.spec) ? details.spec : []);
+    if (details.shutter_type) {
+        spec.push(['نوع البوابة', [details.shutter_type, details.variant].filter(Boolean).join(' — ')]);
+    } else if (given.has('نوع البوابة')) {
+        spec.push(['نوع البوابة', given.get('نوع البوابة')]);
+    } else if (details.package_name) {
+        spec.push(['نوع البوابة', `${details.door_type} — ${details.package_name}`]);
+    }
+    if (details.width_cm) {
+        spec.push(['المقاس', `العرض ${details.width_cm} سم — الارتفاع ${details.height_cm} سم` +
+            (details.count > 1 ? ` — عدد ${details.count} بوابات` : '')]);
     }
 
     // Right column: customer; left column: door details (two columns keep the box short)
