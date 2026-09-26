@@ -247,19 +247,14 @@
                     <div class="result" id="result"></div>
                     <div class="breakdown" id="breakdown"></div>
                     <div class="fees-note" id="feesNote"></div>
-                    <button type="button" class="whatsapp-btn" id="submitBtn" onclick="submitQuote()"><i class="fab fa-whatsapp"></i> إرسال طلب عرض السعر</button>
+                    <div class="success-actions" style="margin-top:14px">
+                        <a class="link-btn" id="pdfLink" target="_blank" rel="noopener"><i class="fas fa-file-pdf"></i> تحميل عرض السعر PDF</a>
+                        <a class="link-btn whatsapp-btn" id="waLink" target="_blank" rel="noopener" hidden><i class="fab fa-whatsapp"></i> تابع عبر واتساب</a>
+                    </div>
                 </div>
             </div>
 
             <div id="submitStatus" class="submit-status" role="status" aria-live="polite"></div>
-
-            <div id="successBox" hidden>
-                <div class="success-actions">
-                    <a class="link-btn" id="pdfLink" target="_blank" rel="noopener"><i class="fas fa-file-pdf"></i> تحميل عرض السعر PDF</a>
-                    <a class="link-btn whatsapp-btn" id="waLink" target="_blank" rel="noopener" hidden><i class="fab fa-whatsapp"></i> تابع عبر واتساب</a>
-                </div>
-                <button type="button" onclick="location.reload()" style="background:#64748b"><i class="fas fa-redo icon"></i> حساب بوابة أخرى</button>
-            </div>
 
             <div class="color-offer" id="bottomNotice" style="text-align:center"></div>
             <div class="notes" id="notesBox"></div>
@@ -409,7 +404,7 @@
         lastPrice = null;
         $('resultBox').hidden = true;
         document.querySelectorAll('.acc-price').forEach((el) => { el.textContent = ''; });
-        if ($('submitStatus').classList.contains('status-error')) setStatus('', '');
+        if (!$('submitStatus').classList.contains('status-pending')) setStatus('', '');
     }
 
     function missing() {
@@ -438,20 +433,30 @@
         };
     }
 
+    /* "احتساب السعر": same as the company site — the price is calculated on the server and the
+       request (with all the data) goes straight to the sales team on WhatsApp. */
     async function calculate() {
+        const name = $('clientName').value.trim();
+        const phone = $('clientPhone').value.trim();
+        if (!name) return setStatus('error', '⚠️ يرجى إدخال اسم العميل.');
+        if (!/^(\+?968|00968)?[79]\d{7}$/.test(phone.replace(/[\s-]/g, ''))) {
+            return setStatus('error', '⚠️ يرجى إدخال رقم جوال عماني صالح (مثال: 9XXXXXXX).');
+        }
         const problem = missing();
-        if (problem) { setStatus('error', '⚠️ ' + esc(problem)); return; }
-        setStatus('', '');
+        if (problem) return setStatus('error', '⚠️ ' + esc(problem));
+        setStatus('pending', 'جاري احتساب السعر وإرسال الطلب...');
         const btn = $('calcBtn');
         btn.disabled = true;
         try {
-            const res = await fetch('/api/public/door-price', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload())
+            const res = await fetch('/api/public/door-quotes', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...payload(), customer_name: name, customer_phone: phone, notes: $('notes').value })
             });
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'تعذر حساب السعر');
+            if (!res.ok) throw new Error(res.status === 429 ? 'تم تجاوز عدد المحاولات، يرجى المحاولة بعد قليل.' : data.error || 'تعذر احتساب السعر');
             lastPrice = data;
             showPrice();
+            setStatus('success', `✅ تم إرسال طلبك إلى فريق المبيعات — رقم الطلب: <span class="quote-ref">${esc(data.ref)}</span><br>سيتواصل معك فريقنا قريباً.`);
         } catch (err) {
             setStatus('error', esc(err.message));
         } finally {
@@ -466,44 +471,17 @@
             `<div><span>المجموع</span><span>${money(lastPrice.subtotal)}</span></div>` +
             `<div><span>ضريبة القيمة المضافة ${lastPrice.vat_percent}%</span><span>${money(lastPrice.vat)}</span></div>` +
             `<div class="total-row"><span>الإجمالي (ر.ع)</span><span>${money(lastPrice.total)}</span></div>`;
-        $('feesNote').textContent = lastPrice.delivery_installation;
+        $('feesNote').textContent = (lastPrice.details && lastPrice.details.fees_note) || '';
         for (const g of conf.accessory_groups) {
             const o = g.options.find((x) => x.id === Number($('acc' + g.id).value));
             const line = o && lastPrice.items.find((i) => i.name === g.name && i.type === o.label);
             $('accPrice' + g.id).textContent = line ? money(line.line_total) + ' ر.ع' : '';
         }
+        $('pdfLink').href = lastPrice.pdf_url;
+        $('waLink').hidden = !lastPrice.whatsapp_link;
+        if (lastPrice.whatsapp_link) $('waLink').href = lastPrice.whatsapp_link;
         $('resultBox').hidden = false;
         scrollToEl($('result'));
-    }
-
-    async function submitQuote() {
-        const name = $('clientName').value.trim();
-        const phone = $('clientPhone').value.trim();
-        if (!name) return setStatus('error', 'يرجى إدخال اسم العميل قبل طلب عرض السعر.');
-        if (!phone) return setStatus('error', 'يرجى إدخال رقم الجوال (مثال: 9XXXXXXX).');
-        if (!lastPrice) return setStatus('error', 'يرجى احتساب السعر قبل الإرسال.');
-        const btn = $('submitBtn');
-        btn.disabled = true;
-        setStatus('pending', 'جاري إرسال الطلب...');
-        try {
-            const res = await fetch('/api/public/door-quotes', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...payload(), customer_name: name, customer_phone: phone, notes: $('notes').value })
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'تعذر إرسال الطلب');
-            setStatus('success', `✅ تم استلام طلبك بنجاح — رقم عرض السعر: <span class="quote-ref">${esc(data.ref)}</span><br>
-                الإجمالي: ${money(data.total)} ريال عماني — سيتواصل معك فريقنا قريباً.`);
-            $('pdfLink').href = data.pdf_url;
-            if (data.whatsapp_link) { $('waLink').href = data.whatsapp_link; $('waLink').hidden = false; }
-            $('calcForm').hidden = true;
-            $('successBox').hidden = false;
-            scrollToEl(document.body);
-        } catch (err) {
-            setStatus('error', esc(err.message));
-        } finally {
-            btn.disabled = false;
-        }
     }
 
     /* ---------- Embedding (radma.co iframe via embed.js) ---------- */

@@ -1246,6 +1246,7 @@
                                 <th>البنود</th>
                                 <th>الإجمالي (ر.ع)</th>
                                 <th>المصدر</th>
+                                <th>واتساب المبيعات</th>
                                 <th>الحالة</th>
                                 <th>PDF</th>
                             </tr>
@@ -1292,6 +1293,24 @@
                 <p class="status-text">شعار الشركة في صفحة العميل هو الملف <code>public/images/logo.png</code> — استبدله بنفس الاسم لتغييره.</p>
                 <div class="db-actions">
                     <button class="btn btn-accent" onclick="saveSettingsToServer()">حفظ</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">M</span>
+                    واتساب المبيعات عبر MazBot <span class="badge" id="mazbotStatus" style="margin-inline-start:10px"></span>
+                </div>
+                <p class="status-text" style="margin-top:0">عند ضغط العميل «احتساب السعر» يُرسل قالب واتساب بكل بيانات الطلب إلى هذه الأرقام (رقم الطلب، الاسم، الجوال، الموقع، النوع، المقاس، المسارات، عمود المحور، القواعد، المحرك، السعر).
+                    بيانات الدخول (MAZBOT_API_KEY و MAZBOT_STAFF_EMAIL و MAZBOT_STAFF_PASSWORD و MAZBOT_TEMPLATE_ID) تُضبط في متغيرات البيئة على الخادم فقط.</p>
+                <div class="form-grid">
+                    <div class="form-group" style="grid-column: 1 / -1;"><label>أرقام الاستقبال <span class="unit">(مفصولة بفاصلة — 8 أرقام أو بالصيغة الدولية)</span></label><input type="text" id="mazbotRecipients" placeholder="76979066, 90660001"></div>
+                </div>
+                <p class="status-text">كل رقم جديد يجب أن يراسل رقم واتساب العمل مرة واحدة أولاً ليستقبل القوالب.</p>
+                <div class="db-actions">
+                    <button class="btn btn-accent" onclick="saveSettingsToServer()">حفظ</button>
+                    <button class="btn btn-outline" onclick="testMazbot()">إرسال رسالة تجريبية</button>
+                    <span id="mazbotTestStatus" class="status-text"></span>
                 </div>
             </div>
 
