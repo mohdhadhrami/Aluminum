@@ -199,6 +199,26 @@ CREATE TABLE IF NOT EXISTS regions (
     active            INTEGER NOT NULL DEFAULT 1
 );
 
+-- Overhead (sectional) gates: a price range per type × standard size, and the motors
+CREATE TABLE IF NOT EXISTS overhead_sizes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    gate_type   TEXT NOT NULL,
+    height_cm   REAL NOT NULL,
+    width_cm    REAL NOT NULL,
+    price_from  REAL NOT NULL,
+    price_to    REAL NOT NULL,
+    active      INTEGER NOT NULL DEFAULT 1,
+    sort_order  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS overhead_motors (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    price       REAL NOT NULL,
+    active      INTEGER NOT NULL DEFAULT 1,
+    sort_order  INTEGER NOT NULL DEFAULT 0
+);
+
 -- WhatsApp / test conversations with the AI sales agent
 CREATE TABLE IF NOT EXISTS agent_conversations (
     conversation_key  TEXT PRIMARY KEY,
@@ -256,6 +276,9 @@ function seedConfigurator(db) {
     if (process.env.SEED_SAMPLE === '0') return;
     const { n } = db.prepare('SELECT COUNT(*) AS n FROM shutter_types').get();
     if (n === 0) require('./radma-catalog').applyRadmaCatalog(db);
+    // Overhead gates: start from the company site's overhead calculator (also on existing databases)
+    const overhead = db.prepare('SELECT (SELECT COUNT(*) FROM overhead_sizes) + (SELECT COUNT(*) FROM overhead_motors) AS n').get();
+    if (overhead.n === 0) require('./radma-catalog').applyOverheadCatalog(db);
 
     if (db.prepare('SELECT COUNT(*) AS n FROM accessory_groups').get().n > 0) return;
     const findOrCreate = (p, category) => {
@@ -306,6 +329,8 @@ function migrate(db) {
     addColumns('shutter_variants', { description: 'TEXT', width_add_cm: 'REAL NOT NULL DEFAULT 0', height_add_cm: 'REAL NOT NULL DEFAULT 0' });
     // Colors can belong to one thickness (NULL = all), replace the price per m² and add a fixed fee
     addColumns('shutter_colors', { variant_id: 'INTEGER', price_per_m2: 'REAL', fixed_fee: 'REAL NOT NULL DEFAULT 0' });
+    // Overhead gates have their own installation fee per wilayah (NULL = not offered there)
+    addColumns('regions', { overhead_installation_fee: 'REAL' });
 }
 
 /* "~/radma-data/aluminum.db" → the account's home folder. On shared hosting this keeps the

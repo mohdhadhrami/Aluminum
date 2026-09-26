@@ -81,12 +81,15 @@ function quoteText(quote, settings) {
     const lines = [`*عرض سعر رقم ${quote.ref}*`, `العميل: ${quote.customer_name} (${quote.customer_phone})`];
     if (quote.customer_city) lines.push(`المدينة: ${quote.customer_city}`);
     lines.push('');
+    // Overhead gates are priced as a range (from – to, depending on the color)
+    const range = (quote.details && quote.details.range) || {};
+    const amount = (from, to) => (to != null && to !== from ? `${from.toFixed(2)} – ${to.toFixed(2)}` : from.toFixed(2));
     for (const i of quote.items) {
-        lines.push(`• ${i.name}${i.type ? ' — ' + i.type : ''}: ${i.quantity} ${unitLabel(i.unit)} × ${i.unit_price.toFixed(2)} = ${i.line_total.toFixed(2)} ر.ع`);
+        lines.push(`• ${i.name}${i.type ? ' — ' + i.type : ''}: ${i.quantity} ${unitLabel(i.unit)} × ${amount(i.unit_price, i.unit_price_to)} = ${amount(i.line_total, i.line_total_to)} ر.ع`);
     }
-    lines.push('', `المجموع: ${quote.subtotal.toFixed(2)} ر.ع`,
-        `الضريبة (${quote.vat_percent}%): ${quote.vat.toFixed(2)} ر.ع`,
-        `*الإجمالي: ${quote.total.toFixed(2)} ر.ع*`);
+    lines.push('', `المجموع: ${amount(quote.subtotal, range.subtotal_to)} ر.ع`,
+        `الضريبة (${quote.vat_percent}%): ${amount(quote.vat, range.vat_to)} ر.ع`,
+        `*الإجمالي: ${amount(quote.total, range.total_to)} ر.ع*`);
     if (quote.notes) lines.push('', `ملاحظات: ${quote.notes}`);
     lines.push('', `— ${settings.company_name}`);
     return lines.join('\n');

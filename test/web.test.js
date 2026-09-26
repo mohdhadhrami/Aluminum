@@ -29,6 +29,11 @@ test('home page is the public calculator; admin panel is at /admin', async (t) =
     assert.strictEqual(old.headers.get('location'), '/admin');
 
     assert.strictEqual((await fetch(base + '/embed.js')).status, 200);
+
+    const overhead = await fetch(base + '/overhead');
+    assert.strictEqual(overhead.status, 200);
+    assert.match(await overhead.text(), /حاسبة أسعار بوابات الأوفرهيد/);
+    assert.match(overhead.headers.get('content-security-policy'), /frame-ancestors 'self' https:\/\/radma\.co/);
 });
 
 test('only the customer pages can be framed, and only by the allowed sites', async (t) => {

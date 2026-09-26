@@ -625,6 +625,7 @@
             <button class="tab-btn" data-tab="products" onclick="switchTab('products')">المنتجات والأسعار</button>
             <button class="tab-btn" data-tab="purchases" onclick="switchTab('purchases')">أسعار الشراء</button>
             <button class="tab-btn" data-tab="doors" onclick="switchTab('doors')">بوابات الشتر</button>
+            <button class="tab-btn" data-tab="overhead" onclick="switchTab('overhead')">بوابات الأوفرهيد</button>
             <button class="tab-btn" data-tab="quotes" onclick="switchTab('quotes')">طلبات العروض</button>
             <button class="tab-btn" data-tab="agent" onclick="switchTab('agent')">المساعد الذكي</button>
             <button class="tab-btn" data-tab="integrations" onclick="switchTab('integrations')">الربط</button>
@@ -1195,6 +1196,55 @@
                     <select id="newRegionGov"></select>
                     <input type="text" id="newRegionName" placeholder="اسم ولاية جديدة" style="padding: 8px 12px; border: 2px solid var(--border); border-radius: 8px; font-family: inherit;">
                     <button class="btn btn-outline btn-sm" onclick="addRegion()">+ إضافة ولاية</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB: Overhead gates ==================== -->
+        <div id="tab-overhead" class="tab-content">
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">O</span>
+                    المقاسات والأسعار والمحركات — حاسبة الأوفرهيد
+                </div>
+                <div class="range-box" style="margin-bottom: 16px;">
+                    السعر للعميل = سعر المقاس (من – إلى حسب اللون) + المحرك + تركيب الولاية، ثم تُضاف ضريبة القيمة المضافة.
+                    الأسعار قبل الضريبة. صفحة العميل: <a href="/overhead" target="_blank" rel="noopener">/overhead</a>
+                    <button class="btn btn-outline btn-sm" style="margin-inline-start: 10px;" onclick="importRadmaOverhead()">استيراد أسعار ردما</button>
+                    <span id="ohImportStatus" class="status-text"></span>
+                </div>
+                <p class="sub-heading">المقاسات القياسية <span class="status-text">— يختار العميل المقاس الأقرب والأكبر من مقاسه الفعلي. إذا كان للنوع ارتفاع واحد فلن يُسأل العميل عنه.</span></p>
+                <div class="table-wrapper"><table>
+                    <thead><tr><th>النوع (مثل Type A)</th><th>العرض (سم)</th><th>الارتفاع (سم)</th><th>السعر من (ر.ع)</th><th>السعر إلى (ر.ع)</th><th>مفعّل</th><th></th></tr></thead>
+                    <tbody id="ohSizeRows"></tbody>
+                </table></div>
+                <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="addOhSizeRow()">+ مقاس</button>
+                <p class="sub-heading">المحركات</p>
+                <div class="table-wrapper"><table>
+                    <thead><tr><th>المحرك</th><th>السعر (ر.ع)</th><th>مفعّل</th><th></th></tr></thead>
+                    <tbody id="ohMotorRows"></tbody>
+                </table></div>
+                <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="addOhMotorRow()">+ محرك</button>
+                <div class="form-buttons">
+                    <button class="btn btn-primary" onclick="saveOverhead()">حفظ المقاسات والمحركات</button>
+                    <span id="ohStatus" class="status-text"></span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">M</span>
+                    سعر تركيب الأوفرهيد لكل ولاية
+                </div>
+                <p class="status-text" style="margin: 0 0 10px;">تظهر الولاية في حاسبة الأوفرهيد إذا كان لها سعر تركيب، وكانت هي ومحافظتها مفعّلتين (التفعيل من تبويب «بوابات الشتر»). اترك السعر فارغاً لإخفائها من حاسبة الأوفرهيد فقط.</p>
+                <div class="filter-row">
+                    <select id="ohGovFilter" onchange="renderOhRegions()"><option value="">كل المحافظات</option></select>
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead><tr><th>المحافظة</th><th>الولاية</th><th>مفعّلة</th><th>تركيب الأوفرهيد (ر.ع)</th><th></th></tr></thead>
+                        <tbody id="ohRegionsBody"></tbody>
+                    </table>
                 </div>
             </div>
         </div>

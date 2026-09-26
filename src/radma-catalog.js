@@ -117,4 +117,61 @@ function applyRadmaCatalog(db) {
     }
 }
 
-module.exports = { applyRadmaCatalog, SHUTTER_TYPES, INSTALLATION };
+/* ---------------------------------------------------------------
+   Overhead (sectional) gates — the site's overhead calculator
+   (price-calc/overhead): a price range per type × height × width,
+   plus the motor and the installation fee of the wilayah.
+   --------------------------------------------------------------- */
+
+/* [type, height cm, width cm, price from, price to] (OMR, before VAT) */
+const OVERHEAD_SIZES = [
+    ['Type A', 250, 415, 355, 375], ['Type A', 250, 455, 370, 385], ['Type A', 250, 615, 470, 485],
+    ['Type A', 300, 415, 465, 495], ['Type A', 300, 455, 485, 505], ['Type A', 300, 615, 625, 635],
+    ['Type B', 250, 370, 270, 290], ['Type B', 250, 440, 295, 315], ['Type B', 250, 550, 320, 345], ['Type B', 250, 600, 350, 380]
+];
+
+const OVERHEAD_MOTORS = [
+    ['المكينة الإيطالية 1200N', 145],
+    ['المكينة الإيطالية 1000N', 135],
+    ['المكينة الصينية 1500N', 110]
+];
+
+const OVERHEAD_INSTALLATION = {
+    'الداخلية': { 'نزوى': 80, 'بهلاء': 90, 'الحمراء': 90, 'أدم': 100, 'إزكي': 90, 'منح': 90, 'سمائل': 100, 'بدبد': 100, 'الجبل الأخضر': 140 },
+    'مسقط': { 'مسقط': 110, 'السيب': 100, 'بوشر': 100, 'مطرح': 100, 'العامرات': 110 },
+    'جنوب الباطنة': { 'المصنعة': 120, 'بركاء': 110 },
+    'شمال الشرقية': { 'إبراء': 110, 'المضيبي': 110, 'دماء والطائيين': 110, 'سناو': 110 },
+    'الظاهرة': { 'عبري': 115 }
+};
+
+/* Replace the overhead sizes and motors, and set the overhead installation fee of each wilayah.
+   Wilayat and governorates keep their enabled/disabled state (they are shared with the shutters). */
+function applyOverheadCatalog(db) {
+    db.exec('BEGIN');
+    try {
+        db.prepare('DELETE FROM overhead_sizes').run();
+        db.prepare('DELETE FROM overhead_motors').run();
+        const size = db.prepare(`INSERT INTO overhead_sizes (gate_type, height_cm, width_cm, price_from, price_to, sort_order)
+                                 VALUES (?, ?, ?, ?, ?, ?)`);
+        OVERHEAD_SIZES.forEach((row, i) => size.run(...row, i));
+        const motor = db.prepare('INSERT INTO overhead_motors (name, price, sort_order) VALUES (?, ?, ?)');
+        OVERHEAD_MOTORS.forEach((row, i) => motor.run(...row, i));
+        db.prepare('UPDATE regions SET overhead_installation_fee = NULL').run();
+        for (const [gov, wilayat] of Object.entries(OVERHEAD_INSTALLATION)) {
+            db.prepare('INSERT OR IGNORE INTO governorates (name, sort_order) VALUES (?, 99)').run(gov);
+            for (const [name, fee] of Object.entries(wilayat)) {
+                db.prepare('INSERT OR IGNORE INTO regions (name, governorate) VALUES (?, ?)').run(name, gov);
+                db.prepare('UPDATE regions SET overhead_installation_fee = ? WHERE name = ?').run(fee, name);
+            }
+        }
+        db.exec('COMMIT');
+    } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+    }
+}
+
+module.exports = {
+    applyRadmaCatalog, applyOverheadCatalog, SHUTTER_TYPES, INSTALLATION,
+    OVERHEAD_SIZES, OVERHEAD_MOTORS, OVERHEAD_INSTALLATION
+};

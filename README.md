@@ -149,6 +149,28 @@ npm start
 
 ⚠️ أسعار وتفاصيل **الإكسسوارات** المضافة مسبقاً **تجريبية**، فعدّلها قبل التشغيل الفعلي.
 
+## حاسبة بوابات الأوفرهيد (صفحة `/overhead`)
+
+نفس طريقة وبيانات حاسبة الأوفرهيد في موقع ردما (`price-calc/overhead`):
+
+1. بيانات العميل: الاسم والجوال والمحافظة والولاية.
+2. النوع (Type A أو Type B)، ثم العرض من المقاسات القياسية (الأقرب والأكبر من المقاس الفعلي)، ثم الارتفاع. إذا كان للنوع ارتفاع واحد (Type B: 250 سم) فلا يُسأل العميل عنه.
+3. المحرك: الإيطالية 1200N (145) أو الإيطالية 1000N (135) أو الصينية 1500N (110).
+4. زر «احتساب السعر» يعرض نطاقاً يختلف حسب اللون:
+   - من = سعر المقاس «من» + المحرك + تركيب الولاية؛
+   - إلى = سعر المقاس «إلى» + المحرك + تركيب الولاية؛
+   - تُضاف 5% ضريبة القيمة المضافة، لأن أسعار الموقع لا تشملها.
+
+   مثال: Type A بمقاس 415×250 مع المحرك الإيطالي 1200N في نزوى = (355–375) + 145 + 80 = 580–600، أي 609–630 شامل الضريبة.
+5. «إرسال طلب عرض السعر» يحفظ العرض بالنطاق، ثم يعطي العميل ملف PDF ورابط واتساب.
+
+الإعداد من تبويب «بوابات الأوفرهيد» في لوحة الإدارة:
+- جدول المقاسات والأسعار (من – إلى) لكل نوع، وجدول المحركات وأسعارها.
+- سعر تركيب الأوفرهيد لكل ولاية، وهو منفصل عن سعر تركيب الشتر. إذا تُرك فارغاً تختفي الولاية من حاسبة الأوفرهيد فقط.
+- زر «استيراد أسعار ردما» يعيد الأسعار الأصلية للموقع.
+
+يتم التبديل بين الحاسبتين من الشريط أعلى الصفحة.
+
 ## المساعد الذكي على واتساب (AI Agent)
 
 إذا ضبطت `ANTHROPIC_API_KEY` في ملف `.env`، تُحوَّل رسائل واتساب إلى مساعد ذكي يعمل بنموذج Claude. يستخدم المساعد **نفس بيانات وحسابات صفحة العميل**، ويدير المحادثة بهذا الترتيب:
@@ -248,7 +270,14 @@ npm start
 
 ```html
 <div data-radma-calculator></div>
-<script src="https://calc.radma.co/embed.js" async></script>
+<script src="https://calcshutter.radma.co/embed.js" async></script>
+```
+
+ولحاسبة الأوفرهيد (مثلاً مكان `price-calc/overhead/index.html`):
+
+```html
+<div data-radma-calculator="overhead"></div>
+<script src="https://calcshutter.radma.co/embed.js" async></script>
 ```
 
 - تظهر الحاسبة داخل الصفحة بدون ترويسة وتذييل، لأن الصفحة المضيفة تحتويهما.
@@ -259,6 +288,7 @@ npm start
 
 - عامة:
   - `GET /api/public/configurator` و `POST /api/public/door-price` و `POST /api/public/door-quotes` (حاسبة البوابة)
+  - `GET /api/public/overhead` و `POST /api/public/overhead-price` و `POST /api/public/overhead-quotes` (حاسبة الأوفرهيد)
   - `GET /api/public/catalog` و `POST /api/public/quotes` (طلب المستلزمات)
   - `GET /quotes/<رقم>.pdf?k=<مفتاح>`
 - إدارية (تحتاج `Authorization: Bearer <ADMIN_TOKEN>`):
@@ -268,6 +298,7 @@ npm start
   - `/api/admin/quotes` و `/api/admin/quotes/:id/pdf`
   - `/api/admin/configurator` و `/api/admin/configurator/preview`
   - `/api/admin/shutter-types` و `/api/admin/accessory-groups`
+  - `/api/admin/overhead` و `/api/admin/import/radma-overhead`
   - `/api/admin/governorates` و `/api/admin/regions`
   - `/api/admin/agent/chat` (تجربة المساعد)
   - `/api/admin/webhooks` و `/api/admin/webhooks/:id/test`
