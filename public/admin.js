@@ -359,8 +359,8 @@ async function loadQuotes() {
             <td>${esc(q.customer_name)}${q.customer_city ? '<br><small>' + esc(q.customer_city) + '</small>' : ''}
                 ${q.notes ? '<br><small style="color:var(--text-light)">' + esc(q.notes) + '</small>' : ''}</td>
             <td><a href="https://wa.me/${esc(q.customer_phone)}" target="_blank" rel="noopener">${esc(q.customer_phone)}</a></td>
-            <td class="quote-items">${q.items.map((i) => `${esc(i.name)}${i.type ? ' — ' + esc(i.type) : ''}: ${i.quantity} × ${i.unit_price.toFixed(2)}`).join('<br>')}</td>
-            <td><strong>${q.total.toFixed(2)}</strong></td>
+            <td class="quote-items">${q.items.map((i) => `${esc(i.name)}${i.type ? ' — ' + esc(i.type) : ''}: ${i.quantity} × ${i.unit_price.toFixed(2)}${i.unit_price_to != null ? ' – ' + i.unit_price_to.toFixed(2) : ''}`).join('<br>')}</td>
+            <td><strong>${q.total.toFixed(2)}${q.details && q.details.range ? ' – ' + q.details.range.total_to.toFixed(2) : ''}</strong></td>
             <td>${esc(SOURCE_NAMES[q.source] || q.source)}</td>
             <td><small>${esc(q.notify_status || '—')}</small></td>
             <td>
@@ -904,6 +904,87 @@ async function restoreSaved(name) {
     }
 }
 
+/* --------------------------- Overhead gates ------------------------ */
+
+let overheadData = { sizes: [], motors: [], regions: [] };
+
+async function loadOverhead() {
+    overheadData = await api('GET', '/api/admin/overhead');
+    $id('ohSizeRows').innerHTML = '';
+    overheadData.sizes.forEach(addOhSizeRow);
+    $id('ohMotorRows').innerHTML = '';
+    overheadData.motors.forEach(addOhMotorRow);
+    const keep = $id('ohGovFilter').value;
+    const govs = [...new Set(overheadData.regions.map((r) => r.governorate).filter(Boolean))];
+    $id('ohGovFilter').innerHTML = '<option value="">كل المحافظات</option>' + govs.map((g) => `<option value="${esc(g)}">${esc(g)}</option>`).join('');
+    $id('ohGovFilter').value = keep;
+    renderOhRegions();
+}
+
+const cell = (cls, value, type = 'number', width = 100) =>
+    `<td><input class="${cls}" type="${type}" ${type === 'number' ? 'min="0" step="0.5"' : ''} value="${esc(value ?? '')}" style="width:${width}px"></td>`;
+
+function addOhSizeRow(s = {}) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = cell('s-type', s.gate_type, 'text', 120) + cell('s-width', s.width_cm) + cell('s-height', s.height_cm) +
+        cell('s-from', s.price_from) + cell('s-to', s.price_to) +
+        `<td><input class="s-active" type="checkbox" ${s.active === 0 ? '' : 'checked'}></td>
+         <td><button class="btn btn-outline btn-sm" onclick="this.closest('tr').remove()">حذف</button></td>`;
+    $id('ohSizeRows').appendChild(tr);
+}
+
+function addOhMotorRow(m = {}) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = cell('m-name', m.name, 'text', 240) + cell('m-price', m.price) +
+        `<td><input class="m-active" type="checkbox" ${m.active === 0 ? '' : 'checked'}></td>
+         <td><button class="btn btn-outline btn-sm" onclick="this.closest('tr').remove()">حذف</button></td>`;
+    $id('ohMotorRows').appendChild(tr);
+}
+
+async function saveOverhead() {
+    const val = (tr, cls) => tr.querySelector('.' + cls).value;
+    const sizes = [...$id('ohSizeRows').children].map((tr) => ({
+        gate_type: val(tr, 's-type'), width_cm: val(tr, 's-width'), height_cm: val(tr, 's-height'),
+        price_from: val(tr, 's-from'), price_to: val(tr, 's-to'), active: tr.querySelector('.s-active').checked
+    }));
+    const motors = [...$id('ohMotorRows').children].map((tr) => ({
+        name: val(tr, 'm-name'), price: val(tr, 'm-price'), active: tr.querySelector('.m-active').checked
+    }));
+    try {
+        await api('PUT', '/api/admin/overhead', { sizes, motors });
+        setStatus('ohStatus', 'تم الحفظ ✓', 'ok');
+        await loadOverhead();
+    } catch (err) {
+        setStatus('ohStatus', err.message, 'err');
+    }
+}
+
+function renderOhRegions() {
+    const gov = $id('ohGovFilter').value;
+    $id('ohRegionsBody').innerHTML = overheadData.regions
+        .filter((r) => !gov || r.governorate === gov)
+        .map((r) => `
+        <tr>
+            <td>${esc(r.governorate || '')}</td>
+            <td>${esc(r.name)}</td>
+            <td>${r.active ? '✓' : '—'}</td>
+            <td><input type="number" min="0" step="0.5" id="oi${r.id}" value="${r.overhead_installation_fee ?? ''}" placeholder="غير متاح" style="width:110px"></td>
+            <td><button class="btn btn-outline btn-sm" onclick="saveOhRegion(${r.id}, this)">حفظ</button></td>
+        </tr>`).join('');
+}
+
+async function saveOhRegion(id, btn) {
+    try {
+        const r = await api('PUT', `/api/admin/regions/${id}`, { overhead_installation_fee: $id('oi' + id).value });
+        const i = overheadData.regions.findIndex((x) => x.id === id);
+        overheadData.regions[i] = { ...overheadData.regions[i], overhead_installation_fee: r.overhead_installation_fee };
+        btn.textContent = '✓';
+        setTimeout(() => { btn.textContent = 'حفظ'; }, 1500);
+    } catch (err) {
+        alert(err.message);
+    }
+}
+
 /* --------------------------- Agent console ------------------------- */
 
 const chatSession = 'admin-' + Math.random().toString(36).slice(2, 8);
@@ -925,14 +1006,17 @@ async function loadAgentStatus() {
 
 async function loadMazbotStatus() {
     const s = await api('GET', '/api/admin/mazbot/status');
-    $id('mazbotStatus').textContent = s.configured ? (s.dry_run ? 'وضع تجريبي (لا يرسل)' : 'مفعّل') : 'غير مفعّل — أضف بيانات MazBot في متغيرات البيئة';
+    const label = (on) => (on ? (s.dry_run ? 'وضع تجريبي (لا يرسل)' : 'مفعّل') : 'غير مفعّل');
+    $id('mazbotStatus').textContent = 'الرولينج شتر: ' + label(s.configured);
     $id('mazbotStatus').className = 'badge' + (s.configured ? ' on' : '');
+    $id('mazbotOverheadStatus').textContent = 'الأوفرهيد: ' + label(s.overhead_configured);
+    $id('mazbotOverheadStatus').className = 'badge' + (s.overhead_configured ? ' on' : '');
 }
 
-async function testMazbot() {
+async function testMazbot(calculator) {
     setStatus('mazbotTestStatus', 'جاري الإرسال...');
     try {
-        const r = await api('POST', '/api/admin/mazbot/test');
+        const r = await api('POST', '/api/admin/mazbot/test?calculator=' + calculator);
         const failed = r.results.filter((x) => !x.ok);
         setStatus('mazbotTestStatus', `تم الإرسال إلى ${r.sent} من ${r.total}` +
             (failed.length ? ' — فشل: ' + failed.map((x) => `${x.mobile} (${x.error})`).join('، ') : ' ✓'), failed.length ? 'err' : 'ok');
@@ -983,6 +1067,7 @@ window.switchTab = function (tabId) {
     if (tabId === 'quotes') loadQuotes();
     if (tabId === 'products') renderProducts();
     if (tabId === 'doors') { loadDoors(); loadBackups().catch(() => {}); }
+    if (tabId === 'overhead') loadOverhead();
 };
 
 async function initAdmin() {

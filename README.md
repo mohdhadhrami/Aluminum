@@ -186,6 +186,7 @@ npm start
 | `MAZBOT_STAFF_EMAIL` | بريد حساب موظف (client-staff)، لأن حساب المالك لا يعمل مع API |
 | `MAZBOT_STAFF_PASSWORD` | كلمة مرور حساب الموظف |
 | `MAZBOT_TEMPLATE_ID` | رقم قالب الرولينج شتر (11 متغيراً) |
+| `MAZBOT_OVERHEAD_TEMPLATE_ID` | رقم قالب الأوفرهيد (8 متغيرات) |
 | `MAZBOT_DRY_RUN=1` | اختياري، للتجربة بدون إرسال فعلي |
 
 كل رقم استقبال جديد يجب أن يراسل رقم واتساب العمل مرة واحدة أولاً ليستقبل القوالب.
@@ -210,6 +211,49 @@ npm start
   تُحفظ في مجلد `backups` بجوار ملف قاعدة البيانات (مثلاً `~/radma-data/backups`). لتغيير المجلد استخدم `BACKUP_DIR`.
 
 عند تعديل الملف في Excel قبل الاستعادة، لا تغيّر أسماء الأوراق ولا الصف الأول (أسماء الأعمدة).
+## حاسبة بوابات الأوفرهيد (صفحة `/overhead` و calcoverhead.radma.co)
+
+نفس بيانات حاسبة الأوفرهيد في موقع ردما (`price-calc/overhead`). البوابة تُشترى طقماً كاملاً من المورد:
+
+1. بيانات العميل: الاسم والجوال والمحافظة والولاية.
+2. النوع: Type A أو Type B.
+3. المقاس من قائمة منسدلة واحدة (العرض × الارتفاع)، مجمّعة حسب الارتفاع (250 أو 300 سم).
+4. المحرك: الإيطالية 1200N (145) أو الإيطالية 1000N (135) أو الصينية 1500N (110).
+5. زر «احتساب السعر» يحسب السعر في الخادم، ويحفظ الطلب مع PDF، ويرسل قالب واتساب الأوفرهيد لأرقام المبيعات. يعمل بنفس طريقة حاسبة الرولينج شتر، بما في ذلك منع التكرار.
+
+**طريقة الحساب:** نطاق يختلف حسب اللون:
+- من = سعر الطقم «من» + المحرك + تركيب الأوفرهيد للولاية؛
+- إلى = سعر الطقم «إلى» + المحرك + تركيب الأوفرهيد للولاية؛
+- تُضاف 5% ضريبة القيمة المضافة.
+
+مثال: Type A بمقاس 415×250 مع المحرك الإيطالي 1200N في نزوى = (355–375) + 145 + 80 = 580–600، أي 609–630 شامل الضريبة.
+
+**قالب MazBot للأوفرهيد:** قالب مستقل (`MAZBOT_OVERHEAD_TEMPLATE_ID`) من 8 متغيرات:
+
+| المتغير | المحتوى |
+|---|---|
+| 1 | رقم الطلب |
+| 2 | الاسم |
+| 3 | الجوال |
+| 4 | المحافظة - الولاية |
+| 5 | النوع |
+| 6 | المقاس |
+| 7 | المحرك |
+| 8 | السعر من - إلى شامل الضريبة |
+
+إذا لم يُضبط رقم القالب لا تُرسل رسالة، ولا يُستخدم قالب الرولينج شتر بالخطأ.
+
+**الإعداد:** من تبويب «بوابات الأوفرهيد» في لوحة الإدارة:
+- جدول المقاسات وأسعار الطقم (من – إلى)؛
+- جدول المحركات؛
+- سعر تركيب الأوفرهيد لكل ولاية، وهو منفصل عن تركيب الشتر. إذا تُرك فارغاً تختفي الولاية من حاسبة الأوفرهيد فقط.
+
+**رابط مستقل للعميل: calcoverhead.radma.co**
+1. أنشئ `calcoverhead.radma.co` في Hostinger كموقع عادي.
+2. ارفع إليه الملف `sites/calcoverhead/index.html` باسم `index.html`.
+3. أضف `https://calcoverhead.radma.co` إلى `EMBED_ALLOWED_ORIGINS` على الخادم.
+
+الصفحة واجهة فقط: الحاسبة والأسعار تأتي من النظام نفسه، فلا تحتاج أي تعديل عند تغيير الأسعار.
 
 ## المساعد الذكي على واتساب (AI Agent)
 
@@ -310,7 +354,14 @@ npm start
 
 ```html
 <div data-radma-calculator></div>
-<script src="https://calc.radma.co/embed.js" async></script>
+<script src="https://calcshutter.radma.co/embed.js" async></script>
+```
+
+ولحاسبة الأوفرهيد (مثلاً مكان `price-calc/overhead/index.html`):
+
+```html
+<div data-radma-calculator="overhead"></div>
+<script src="https://calcshutter.radma.co/embed.js" async></script>
 ```
 
 - تظهر الحاسبة داخل الصفحة بدون ترويسة وتذييل، لأن الصفحة المضيفة تحتويهما.
@@ -321,6 +372,7 @@ npm start
 
 - عامة:
   - `GET /api/public/configurator` و `POST /api/public/door-price` و `POST /api/public/door-quotes` (حاسبة البوابة)
+  - `GET /api/public/overhead` و `POST /api/public/overhead-price` و `POST /api/public/overhead-quotes` (حاسبة الأوفرهيد)
   - `GET /api/public/catalog` و `POST /api/public/quotes` (طلب المستلزمات)
   - `GET /quotes/<رقم>.pdf?k=<مفتاح>`
 - إدارية (تحتاج `Authorization: Bearer <ADMIN_TOKEN>`):
@@ -330,6 +382,7 @@ npm start
   - `/api/admin/quotes` و `/api/admin/quotes/:id/pdf`
   - `/api/admin/configurator` و `/api/admin/configurator/preview`
   - `/api/admin/shutter-types` و `/api/admin/accessory-groups`
+  - `/api/admin/overhead`
   - `/api/admin/governorates` و `/api/admin/regions`
   - `GET /api/admin/backup.xlsx` و `POST /api/admin/restore` و `/api/admin/backups`
   - `/api/admin/agent/chat` (تجربة المساعد)

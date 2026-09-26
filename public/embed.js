@@ -1,8 +1,9 @@
 /*
- * Embed the rolling-shutter calculator in another website (e.g. radma.co).
+ * Embed a customer calculator in another website (e.g. radma.co).
  *
- *   <div data-radma-calculator></div>
- *   <script src="https://calc.radma.co/embed.js" async></script>
+ *   <div data-radma-calculator></div>            ← rolling shutter
+ *   <div data-radma-calculator="overhead"></div> ← overhead gates
+ *   <script src="https://calcshutter.radma.co/embed.js" async></script>
  *
  * The iframe grows to the calculator's height automatically. The host site must be
  * listed in EMBED_ALLOWED_ORIGINS on the calculator server (radma.co is by default).
@@ -16,8 +17,9 @@
         if (target.getAttribute('data-radma-mounted')) return;
         target.setAttribute('data-radma-mounted', '1');
         var iframe = document.createElement('iframe');
-        iframe.src = base + '/?embed=1';
-        iframe.title = 'حاسبة أسعار بوابات الرولينج شتر';
+        var overhead = target.getAttribute('data-radma-calculator') === 'overhead';
+        iframe.src = base + (overhead ? '/overhead' : '/') + '?embed=1';
+        iframe.title = overhead ? 'حاسبة أسعار بوابات الأوفرهيد' : 'حاسبة أسعار بوابات الرولينج شتر';
         iframe.loading = 'lazy';
         iframe.setAttribute('scrolling', 'no');
         iframe.style.cssText = 'width:100%;border:0;display:block;min-height:900px;overflow:hidden;background:transparent';

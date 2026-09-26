@@ -625,6 +625,7 @@
             <button class="tab-btn" data-tab="products" onclick="switchTab('products')">المنتجات والأسعار</button>
             <button class="tab-btn" data-tab="purchases" onclick="switchTab('purchases')">أسعار الشراء</button>
             <button class="tab-btn" data-tab="doors" onclick="switchTab('doors')">بوابات الشتر</button>
+            <button class="tab-btn" data-tab="overhead" onclick="switchTab('overhead')">بوابات الأوفرهيد</button>
             <button class="tab-btn" data-tab="quotes" onclick="switchTab('quotes')">طلبات العروض</button>
             <button class="tab-btn" data-tab="agent" onclick="switchTab('agent')">المساعد الذكي</button>
             <button class="tab-btn" data-tab="integrations" onclick="switchTab('integrations')">الربط</button>
@@ -1214,6 +1215,53 @@
             </div>
         </div>
 
+        <!-- ==================== TAB: Overhead gates ==================== -->
+        <div id="tab-overhead" class="tab-content">
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">O</span>
+                    المقاسات والأسعار والمحركات — حاسبة الأوفرهيد
+                </div>
+                <div class="range-box" style="margin-bottom: 16px;">
+                    السعر للعميل = سعر المقاس (من – إلى حسب اللون) + المحرك + تركيب الولاية، ثم تُضاف ضريبة القيمة المضافة.
+                    الأسعار قبل الضريبة. صفحة العميل: <a href="/overhead" target="_blank" rel="noopener">/overhead</a>
+                </div>
+                <p class="sub-heading">المقاسات القياسية <span class="status-text">— يختار العميل المقاس الأقرب والأكبر من مقاسه الفعلي. إذا كان للنوع ارتفاع واحد فلن يُسأل العميل عنه.</span></p>
+                <div class="table-wrapper"><table>
+                    <thead><tr><th>النوع (مثل Type A)</th><th>العرض (سم)</th><th>الارتفاع (سم)</th><th>السعر من (ر.ع)</th><th>السعر إلى (ر.ع)</th><th>مفعّل</th><th></th></tr></thead>
+                    <tbody id="ohSizeRows"></tbody>
+                </table></div>
+                <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="addOhSizeRow()">+ مقاس</button>
+                <p class="sub-heading">المحركات</p>
+                <div class="table-wrapper"><table>
+                    <thead><tr><th>المحرك</th><th>السعر (ر.ع)</th><th>مفعّل</th><th></th></tr></thead>
+                    <tbody id="ohMotorRows"></tbody>
+                </table></div>
+                <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="addOhMotorRow()">+ محرك</button>
+                <div class="form-buttons">
+                    <button class="btn btn-primary" onclick="saveOverhead()">حفظ المقاسات والمحركات</button>
+                    <span id="ohStatus" class="status-text"></span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">M</span>
+                    سعر تركيب الأوفرهيد لكل ولاية
+                </div>
+                <p class="status-text" style="margin: 0 0 10px;">تظهر الولاية في حاسبة الأوفرهيد إذا كان لها سعر تركيب، وكانت هي ومحافظتها مفعّلتين (التفعيل من تبويب «بوابات الشتر»). اترك السعر فارغاً لإخفائها من حاسبة الأوفرهيد فقط.</p>
+                <div class="filter-row">
+                    <select id="ohGovFilter" onchange="renderOhRegions()"><option value="">كل المحافظات</option></select>
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead><tr><th>المحافظة</th><th>الولاية</th><th>مفعّلة</th><th>تركيب الأوفرهيد (ر.ع)</th><th></th></tr></thead>
+                        <tbody id="ohRegionsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <!-- ==================== TAB: AI agent console ==================== -->
         <div id="tab-agent" class="tab-content">
             <div class="card">
@@ -1314,17 +1362,18 @@
             <div class="card">
                 <div class="card-title">
                     <span class="icon">M</span>
-                    واتساب المبيعات عبر MazBot <span class="badge" id="mazbotStatus" style="margin-inline-start:10px"></span>
+                    واتساب المبيعات عبر MazBot <span class="badge" id="mazbotStatus" style="margin-inline-start:10px"></span> <span class="badge" id="mazbotOverheadStatus" style="margin-inline-start:6px"></span>
                 </div>
                 <p class="status-text" style="margin-top:0">عند ضغط العميل «احتساب السعر» يُرسل قالب واتساب بكل بيانات الطلب إلى هذه الأرقام (رقم الطلب، الاسم، الجوال، الموقع، النوع، المقاس، المسارات، عمود المحور، القواعد، المحرك، السعر).
-                    بيانات الدخول (MAZBOT_API_KEY و MAZBOT_STAFF_EMAIL و MAZBOT_STAFF_PASSWORD و MAZBOT_TEMPLATE_ID) تُضبط في متغيرات البيئة على الخادم فقط.</p>
+                    بيانات الدخول (MAZBOT_API_KEY و MAZBOT_STAFF_EMAIL و MAZBOT_STAFF_PASSWORD) ورقم قالب كل حاسبة (MAZBOT_TEMPLATE_ID للرولينج شتر و MAZBOT_OVERHEAD_TEMPLATE_ID للأوفرهيد) تُضبط في متغيرات البيئة على الخادم فقط.</p>
                 <div class="form-grid">
                     <div class="form-group" style="grid-column: 1 / -1;"><label>أرقام الاستقبال <span class="unit">(مفصولة بفاصلة — 8 أرقام أو بالصيغة الدولية)</span></label><input type="text" id="mazbotRecipients" placeholder="76979066, 90660001"></div>
                 </div>
                 <p class="status-text">كل رقم جديد يجب أن يراسل رقم واتساب العمل مرة واحدة أولاً ليستقبل القوالب.</p>
                 <div class="db-actions">
                     <button class="btn btn-accent" onclick="saveSettingsToServer()">حفظ</button>
-                    <button class="btn btn-outline" onclick="testMazbot()">إرسال رسالة تجريبية</button>
+                    <button class="btn btn-outline" onclick="testMazbot('rolling_shutter')">رسالة تجريبية — رولينج شتر</button>
+                    <button class="btn btn-outline" onclick="testMazbot('overhead')">رسالة تجريبية — أوفرهيد</button>
                     <span id="mazbotTestStatus" class="status-text"></span>
                 </div>
             </div>

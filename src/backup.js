@@ -25,8 +25,12 @@ const TABLES = [
     ['accessory_groups', 'مجموعات الإكسسوارات'],
     ['accessory_options', 'فئات الإكسسوارات'],
     ['governorates', 'المحافظات'],
-    ['regions', 'الولايات']
+    ['regions', 'الولايات'],
+    ['overhead_sizes', 'مقاسات الأوفرهيد'],
+    ['overhead_motors', 'محركات الأوفرهيد']
 ];
+/* Sheets added after the first backups: an older file without them keeps the current data */
+const OPTIONAL = new Set(['overhead_sizes', 'overhead_motors']);
 const INFO_SHEET = 'معلومات';
 const err400 = (message) => Object.assign(new Error(message), { status: 400 });
 
@@ -72,11 +76,13 @@ function cellValue(v) {
 async function readWorkbook(buffer) {
     const wb = new ExcelJS.Workbook();
     try { await wb.xlsx.load(buffer); } catch { throw err400('الملف ليس ملف Excel صالحاً'); }
-    const missing = TABLES.filter(([table, label]) => !wb.getWorksheet(label) && !wb.getWorksheet(table)).map(([, label]) => label);
+    const missing = TABLES.filter(([table, label]) => !OPTIONAL.has(table) && !wb.getWorksheet(label) && !wb.getWorksheet(table))
+        .map(([, label]) => label);
     if (missing.length) throw err400('الملف ليس نسخة احتياطية من النظام — أوراق ناقصة: ' + missing.join('، '));
     const data = {};
     for (const [table, label] of TABLES) {
         const ws = wb.getWorksheet(label) || wb.getWorksheet(table);
+        if (!ws) continue; // optional sheet missing
         const header = [];
         ws.getRow(1).eachCell({ includeEmpty: false }, (cell, col) => { header[col] = String(cellValue(cell.value) ?? '').trim(); });
         const rows = [];
@@ -100,8 +106,9 @@ async function restoreWorkbook(db, buffer) {
     try {
         db.exec('BEGIN');
         try {
-            for (const [table] of [...TABLES].reverse()) db.prepare(`DELETE FROM ${table}`).run();
-            for (const [table, label] of TABLES) {
+            const present = TABLES.filter(([table]) => data[table]);
+            for (const [table] of [...present].reverse()) db.prepare(`DELETE FROM ${table}`).run();
+            for (const [table, label] of present) {
                 const cols = columnsOf(db, table).filter((c) => data[table].header.includes(c));
                 if (!cols.length) throw err400(`ورقة «${label}» لا تحتوي أسماء الأعمدة في الصف الأول`);
                 const insert = db.prepare(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`);

@@ -125,6 +125,7 @@ class RtlWriter {
 }
 
 const money = (n) => Number(n).toFixed(2);
+const amount = (from, to) => (to != null && to !== from ? `${money(from)} – ${money(to)}` : money(from));
 const qty = (n) => String(Math.round(Number(n) * 100) / 100);
 
 /**
@@ -224,13 +225,13 @@ function renderQuotePdf(quote, settings, out) {
             name: item.name + (item.type ? ' — ' + item.type : '') + (item.optional ? ' (إضافة)' : ''),
             qty: qty(item.quantity),
             unit: UNIT_LABELS[item.unit] || item.unit,
-            price: money(item.unit_price),
-            total: money(item.line_total)
+            price: amount(item.unit_price, item.unit_price_to),
+            total: amount(item.line_total, item.line_total_to)
         };
         let cx = right;
         for (const c of cols) {
             cx -= c.w;
-            w.line(cells[c.key], cx + 4, y + 5, c.w - 8, { size: 9.5, align: c.key === 'name' ? 'right' : 'center' });
+            w.line(cells[c.key], cx + 4, y + 5, c.w - 8, { size: 9.5, align: c.key === 'name' ? 'right' : 'center', fit: true });
         }
         y += 24;
     });
@@ -238,20 +239,23 @@ function renderQuotePdf(quote, settings, out) {
 
     // ---- Totals ----
     y += 14;
-    const tW = 230;
+    // A range quote (overhead gates: the price depends on the color) shows "from – to" amounts
+    const range = details.range || {};
+    const tW = range.total_to != null ? 290 : 230;
     const tX = left;
+    const valW = range.total_to != null ? 130 : 80;
     const totals = [
-        ['المجموع قبل الضريبة', money(quote.subtotal)],
-        [`ضريبة القيمة المضافة ${quote.vat_percent}%`, money(quote.vat)]
+        ['المجموع قبل الضريبة', amount(quote.subtotal, range.subtotal_to)],
+        [`ضريبة القيمة المضافة ${quote.vat_percent}%`, amount(quote.vat, range.vat_to)]
     ];
     totals.forEach(([label, value]) => {
-        w.line(label, tX + 90, y, tW - 90, { size: 10 });
-        doc.font('Helvetica').fontSize(10).fillColor(COLORS.text).text(value, tX, y + 3, { width: 80, align: 'left', lineBreak: false });
+        w.line(label, tX + valW + 10, y, tW - valW - 10, { size: 10 });
+        doc.font('Helvetica').fontSize(10).fillColor(COLORS.text).text(value, tX, y + 3, { width: valW, align: 'left', lineBreak: false });
         y += 20;
     });
     doc.roundedRect(tX, y, tW, 30, 5).fill(COLORS.accent);
-    w.line('الإجمالي (ر.ع)', tX + 90, y + 6, tW - 100, { size: 12, bold: true, color: '#ffffff' });
-    doc.font('Helvetica-Bold').fontSize(13).fillColor('#ffffff').text(money(quote.total), tX + 10, y + 9, { width: 80, align: 'left', lineBreak: false });
+    w.line('الإجمالي (ر.ع)', tX + valW + 10, y + 6, tW - valW - 20, { size: 12, bold: true, color: '#ffffff', fit: true });
+    doc.font('Helvetica-Bold').fontSize(13).fillColor('#ffffff').text(amount(quote.total, range.total_to), tX + 10, y + 9, { width: valW, align: 'left', lineBreak: false });
     y += 48;
 
     // ---- Customer notes, installation note ----

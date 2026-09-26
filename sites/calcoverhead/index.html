@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>حاسبة أسعار بوابات الأوفرهيد | ردما</title>
+    <meta name="description" content="احسب السعر التقديري لبوابات الأوفرهيد السكشنال من ردما — اختر النوع والمقاس والمحرك والولاية، ويصلك عرض السعر مباشرة.">
+    <link rel="icon" type="image/png" href="https://calcshutter.radma.co/images/logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet">
+    <!--
+        صفحة calcoverhead.radma.co — تعرض حاسبة الأوفرهيد من النظام نفسه (calcshutter.radma.co/overhead).
+        الأسعار ولوحة الإدارة ورسائل واتساب كلها من النظام الواحد؛ هذه الصفحة واجهة فقط ولا تحتاج أي تعديل عند تغيير الأسعار.
+        يجب إضافة https://calcoverhead.radma.co إلى EMBED_ALLOWED_ORIGINS على الخادم.
+    -->
+    <style>
+        :root { --primary: #1e40af; --primary-dark: #1e3a8a; --text: #1e293b; --muted: #64748b; --border: #e2e8f0; --bg: #f1f5f9; }
+        * { box-sizing: border-box; font-family: 'Tajawal', sans-serif; }
+        body {
+            margin: 0; min-height: 100vh; display: flex; flex-direction: column; color: var(--text);
+            background: radial-gradient(800px 300px at 90% -5%, rgba(37, 99, 235, 0.06), transparent 60%), var(--bg);
+        }
+        .site-header {
+            position: sticky; top: 0; z-index: 50; padding: 12px 16px; background: rgba(255, 255, 255, 0.92);
+            border-bottom: 1px solid var(--border); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+        }
+        .header-inner { max-width: 960px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--text); }
+        .brand img { height: 48px; width: auto; }
+        .brand-name { font-size: 1.05rem; font-weight: 700; }
+        .site-link { color: #2563eb; text-decoration: none; font-weight: 700; font-size: 0.9rem; padding: 10px 8px; }
+        main { flex: 1; width: 100%; max-width: 960px; margin: 0 auto; padding: 20px 16px 40px; }
+        .site-footer { background: linear-gradient(135deg, #172554 0%, #1e3a8a 100%); color: #ecf0f1; padding: 26px 16px; }
+        .footer-inner { max-width: 960px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 10px 30px; justify-content: center; text-align: center; line-height: 1.9; }
+        .footer-brand { font-weight: 700; font-size: 1.05rem; width: 100%; }
+        .site-footer a { color: #aed6f1; text-decoration: none; }
+        .copyright { width: 100%; font-size: 0.85rem; color: #bdc3c7; }
+    </style>
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a class="brand" href="https://radma.co">
+                <img src="https://calcshutter.radma.co/images/logo.png" alt="شعار ردما" width="48" height="48">
+                <span class="brand-name">ردما للبوابات الإلكترونية</span>
+            </a>
+            <a class="site-link" href="https://radma.co" target="_blank" rel="noopener">radma.co</a>
+        </div>
+    </header>
+
+    <main>
+        <div data-radma-calculator="overhead"></div>
+        <script src="https://calcshutter.radma.co/embed.js" async></script>
+    </main>
+
+    <footer class="site-footer">
+        <div class="footer-inner">
+            <span class="footer-brand">ردما للبوابات الإلكترونية</span>
+            <span>خدمة العملاء: <a href="tel:+96890660001" dir="ltr">90660001</a></span>
+            <span>الموقع: نزوى – سعال</span>
+            <span>الموقع الإلكتروني: <a href="https://radma.co" target="_blank" rel="noopener">radma.co</a></span>
+            <span class="copyright">© <span id="year">2026</span> ردما للبوابات الإلكترونية — جميع الحقوق محفوظة</span>
+        </div>
+    </footer>
+    <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+</body>
+</html>
