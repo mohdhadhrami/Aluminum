@@ -246,13 +246,32 @@ function renderQuotePdf(quote, settings, out) {
     doc.font('Helvetica-Bold').fontSize(13).fillColor('#ffffff').text(money(quote.total), tX + 10, y + 9, { width: 80, align: 'left', lineBreak: false });
     y += 48;
 
-    // ---- Notes & terms ----
+    // ---- Customer notes, installation note ----
+    const pageBottom = doc.page.height - 50;
+    const ensureSpace = (h) => { if (y + h > pageBottom) { doc.addPage(); y = 40; } };
     const notes = [];
-    if (quote.notes) notes.push('ملاحظات: ' + quote.notes);
+    if (quote.notes) notes.push('ملاحظات العميل: ' + quote.notes);
     if (details.fees_note) notes.push(details.fees_note);
-    notes.push(`هذا العرض صالح لمدة ${settings.quote_validity_days} يوماً من تاريخه، والأسعار بالريال العماني.`);
-    notes.push('المقاسات النهائية تُعتمد بعد المعاينة الميدانية.');
-    for (const n of notes) y = w.paragraph('• ' + n, left, y, width, { size: 9.5, color: COLORS.light }) - 4;
+    for (const n of notes) { ensureSpace(20); y = w.paragraph('• ' + n, left, y, width, { size: 9.5, color: COLORS.light }) - 4; }
+
+    // ---- Terms and conditions (admin setting; one term per line, numbered here) ----
+    const terms = String(settings.quote_terms || '').split('\n')
+        .map((t) => t.trim().replace(/^\(?\d+\s*[).\-]\s*/, ''))   // drop any typed "1)" — numbers are drawn below
+        .filter(Boolean);
+    if (terms.length) {
+        ensureSpace(40);
+        y += 6;
+        w.line('الشروط والأحكام:', left, y, width, { size: 11, bold: true, color: COLORS.primary });
+        y += 24;
+        const numW = 22;
+        terms.forEach((term, i) => {
+            ensureSpace(22);
+            // Number in its own column at the right, so it never mixes into the Arabic text order
+            doc.font('Helvetica-Bold').fontSize(9.5).fillColor(COLORS.text)
+                .text(`${i + 1})`, right - numW, y + 2.5, { width: numW, align: 'right', lineBreak: false });
+            y = w.paragraph(term, left, y, width - numW - 4, { size: 9.5, color: COLORS.text }) - 2;
+        });
+    }
 
     // ---- Footer (below the bottom margin, so disable it to avoid an automatic page break) ----
     doc.page.margins.bottom = 0;

@@ -81,13 +81,13 @@ function applySettings(s) {
     $id('companyWhatsapp').value = s.company_whatsapp || '';
     $id('publicBaseUrl').value = s.public_base_url || '';
     $id('sqmToLinear').value = s.sqm_to_linear;
-    $id('quoteValidity').value = s.quote_validity_days;
     $id('companyTagline').value = s.company_tagline || '';
     $id('companyPhone').value = s.company_phone || '';
     $id('companyAddress').value = s.company_address || '';
     $id('companyWebsite').value = s.company_website || '';
     $id('calculatorNotice').value = s.calculator_notice || '';
     $id('calculatorNotes').value = s.calculator_notes || '';
+    $id('quoteTerms').value = s.quote_terms || '';
     recalculateAll();
 }
 
@@ -107,13 +107,13 @@ async function saveSettingsToServer() {
             company_whatsapp: $id('companyWhatsapp').value,
             public_base_url: $id('publicBaseUrl').value,
             sqm_to_linear: parseFloat($id('sqmToLinear').value) || 13,
-            quote_validity_days: parseInt($id('quoteValidity').value, 10) || 15,
             company_tagline: $id('companyTagline').value,
             company_phone: $id('companyPhone').value,
             company_address: $id('companyAddress').value,
             company_website: $id('companyWebsite').value,
             calculator_notice: $id('calculatorNotice').value,
-            calculator_notes: $id('calculatorNotes').value
+            calculator_notes: $id('calculatorNotes').value,
+            quote_terms: $id('quoteTerms').value
         });
         applySettings(s);
         await loadProducts(); // LME-based prices depend on these settings
