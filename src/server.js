@@ -18,6 +18,7 @@ const { unitCost, unitSellPrice, priceQuote, round2 } = require('./pricing');
 const webhooks = require('./webhooks');
 const whatsapp = require('./whatsapp');
 const doors = require('./doors');
+const overhead = require('./overhead');
 const agent = require('./agent');
 const mazbot = require('./mazbot');
 const backup = require('./backup');
@@ -221,7 +222,7 @@ function createApp(db) {
 
     // Security headers. Only the customer pages may be embedded, and only by the allowed sites;
     // the admin panel and everything else can never be framed (clickjacking protection).
-    const customerPages = new Set(['/', '/calculator.html', '/materials.html']);
+    const customerPages = new Set(['/', '/calculator.html', '/overhead', '/overhead.html', '/materials.html']);
     app.use((req, res, next) => {
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -246,7 +247,7 @@ function createApp(db) {
     /* Status check for the hosting panel / uptime monitors */
     app.get('/healthz', (req, res) => {
         db.prepare('SELECT 1').get();
-        res.json({ ok: true, version: APP_VERSION, features: ['quote_terms', 'mazbot', 'backup'], node: process.versions.node });
+        res.json({ ok: true, version: APP_VERSION, features: ['quote_terms', 'mazbot', 'backup', 'overhead'], node: process.versions.node });
     });
 
     /* ------------------------- Public API ------------------------- */
@@ -310,21 +311,16 @@ function createApp(db) {
 
     /* ---- Roller-shutter door configurator ---- */
 
-    app.get('/api/public/configurator', (req, res) => {
+    /* Company texts shown on every customer calculator */
+    const companyInfo = () => {
         const settings = getSettings(db);
-        res.json({
-            company_name: settings.company_name,
-            company_whatsapp: settings.company_whatsapp,
-            company_tagline: settings.company_tagline,
-            company_phone: settings.company_phone,
-            company_address: settings.company_address,
-            company_website: settings.company_website,
-            calculator_notice: settings.calculator_notice,
-            calculator_notes: settings.calculator_notes,
-            vat_percent: settings.vat_percent,
-            locations: doors.locations(db),
-            ...doors.publicCatalog(db)
-        });
+        const keys = ['company_name', 'company_whatsapp', 'company_tagline', 'company_phone', 'company_address',
+            'company_website', 'calculator_notice', 'calculator_notes', 'vat_percent'];
+        return Object.fromEntries(keys.map((k) => [k, settings[k]]));
+    };
+
+    app.get('/api/public/configurator', (req, res) => {
+        res.json({ ...companyInfo(), locations: doors.locations(db), ...doors.publicCatalog(db) });
     });
 
     const readDoor = (b) => ({
@@ -362,6 +358,32 @@ function createApp(db) {
             return quoteResponse(res, { ...quote, pdf_url: pdfPath(quote) }, { repeat: true });
         }
         quoteResponse(res, saveQuote(db, { ...customer, source: 'web', priced, details }));
+    });
+
+    /* ---- Overhead (sectional) gate calculator: same method and data as the company site's ---- */
+
+    app.get('/api/public/overhead', (req, res) => res.json({ ...companyInfo(), ...overhead.publicOverhead(db) }));
+
+    const readOverhead = (b) => ({
+        gateType: b.gate_type, widthCm: b.width_cm, heightCm: b.height_cm, motorId: b.motor_id, regionId: b.region_id
+    });
+
+    const publicOverheadPrice = ({ region, gate, ...p }) => ({
+        ...p, items: p.items.map(({ product_id, category, ...i }) => i)
+    });
+
+    app.post('/api/public/overhead-price', (req, res) => {
+        res.json(publicOverheadPrice(overhead.overheadPrice(db, readOverhead(req.body || {}))));
+    });
+
+    app.post('/api/public/overhead-quotes', quoteLimit, (req, res) => {
+        const body = req.body || {};
+        const customer = readCustomer(body);
+        const priced = overhead.overheadPrice(db, { ...readOverhead(body), regionId: customer.region.id });
+        quoteResponse(res, saveQuote(db, {
+            ...customer, source: 'web', priced,
+            details: { calculator: 'overhead', ...priced.gate, spec: priced.spec, fees_note: priced.delivery_installation, range: priced.range }
+        }));
     });
 
     /* Customer-facing PDF: the random key in the link is the access control */
@@ -674,6 +696,69 @@ function createApp(db) {
         });
     });
 
+    /* Replace shutter types and installation fees with the company site's catalog */
+    admin.post('/import/radma-catalog', (req, res) => {
+        require('./radma-catalog').applyRadmaCatalog(db);
+        res.json({ ok: true, shutter_types: db.prepare('SELECT COUNT(*) AS n FROM shutter_types').get().n });
+    });
+
+    /* ---- Overhead gates: sizes with their price range, motors, installation fee per wilayah ---- */
+
+    admin.get('/overhead', (req, res) => {
+        const { sizes, motors } = overhead.loadOverhead(db, { includeInactive: true });
+        res.json({
+            sizes, motors,
+            regions: db.prepare(`SELECT id, name, governorate, active, overhead_installation_fee FROM regions
+                                 ORDER BY governorate, name`).all()
+        });
+    });
+
+    admin.put('/overhead', (req, res) => {
+        const b = req.body || {};
+        const num = (v, label) => {
+            const n = Number(v);
+            if (v === '' || v == null || !Number.isFinite(n) || n < 0) throw httpError(400, `قيمة غير صالحة: ${label}`);
+            return n;
+        };
+        const sizes = (Array.isArray(b.sizes) ? b.sizes : []).map((s) => {
+            const row = {
+                gate_type: text(s.gate_type, 60), height_cm: num(s.height_cm, 'الارتفاع'), width_cm: num(s.width_cm, 'العرض'),
+                price_from: num(s.price_from, 'السعر من'), price_to: num(s.price_to, 'السعر إلى'), active: s.active === false || s.active === 0 ? 0 : 1
+            };
+            if (!row.gate_type) throw httpError(400, 'نوع البوابة مطلوب لكل مقاس');
+            if (row.price_to < row.price_from) throw httpError(400, `السعر "إلى" أقل من "من" في ${row.gate_type} ${row.width_cm}×${row.height_cm}`);
+            return row;
+        });
+        const seen = new Set();
+        for (const r of sizes) {
+            const key = `${r.gate_type}|${r.height_cm}|${r.width_cm}`;
+            if (seen.has(key)) throw httpError(400, `المقاس مكرر: ${r.gate_type} ${r.width_cm}×${r.height_cm}`);
+            seen.add(key);
+        }
+        const motors = (Array.isArray(b.motors) ? b.motors : []).map((m) => {
+            const row = { name: text(m.name, 120), price: num(m.price, 'سعر المحرك'), active: m.active === false || m.active === 0 ? 0 : 1 };
+            if (!row.name) throw httpError(400, 'اسم المحرك مطلوب');
+            return row;
+        });
+        tx(() => {
+            db.prepare('DELETE FROM overhead_sizes').run();
+            db.prepare('DELETE FROM overhead_motors').run();
+            const insSize = db.prepare(`INSERT INTO overhead_sizes (gate_type, height_cm, width_cm, price_from, price_to, active, sort_order)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?)`);
+            sizes.forEach((r, i) => insSize.run(r.gate_type, r.height_cm, r.width_cm, r.price_from, r.price_to, r.active, i));
+            const insMotor = db.prepare('INSERT INTO overhead_motors (name, price, active, sort_order) VALUES (?, ?, ?, ?)');
+            motors.forEach((r, i) => insMotor.run(r.name, r.price, r.active, i));
+        });
+        const { sizes: savedSizes, motors: savedMotors } = overhead.loadOverhead(db, { includeInactive: true });
+        res.json({ sizes: savedSizes, motors: savedMotors });
+    });
+
+    /* Replace overhead sizes, motors and installation fees with the company site's overhead calculator */
+    admin.post('/import/radma-overhead', (req, res) => {
+        require('./radma-catalog').applyOverheadCatalog(db);
+        res.json({ ok: true, sizes: db.prepare('SELECT COUNT(*) AS n FROM overhead_sizes').get().n });
+    });
+
     admin.get('/governorates', (req, res) => res.json(db.prepare('SELECT * FROM governorates ORDER BY sort_order, name').all()));
 
     admin.put('/governorates/:id', (req, res) => {
@@ -705,9 +790,10 @@ function createApp(db) {
         const current = db.prepare('SELECT * FROM regions WHERE id = ?').get(id);
         if (!current) throw httpError(404, 'الولاية غير موجودة');
         // Only fields that were sent change (saving fees must not re-enable a disabled wilayah)
-        const info = db.prepare('UPDATE regions SET delivery_fee = ?, installation_fee = ?, active = ? WHERE id = ?')
-            .run(b.delivery_fee === undefined ? current.delivery_fee : fee(b.delivery_fee),
-                b.installation_fee === undefined ? current.installation_fee : fee(b.installation_fee),
+        const keep = (key) => (b[key] === undefined ? current[key] : fee(b[key]));
+        const info = db.prepare(`UPDATE regions SET delivery_fee = ?, installation_fee = ?, overhead_installation_fee = ?, active = ?
+                                 WHERE id = ?`)
+            .run(keep('delivery_fee'), keep('installation_fee'), keep('overhead_installation_fee'),
                 b.active === undefined ? current.active : (b.active ? 1 : 0), id);
         if (!info.changes) throw httpError(404, 'الولاية غير موجودة');
         res.json(db.prepare('SELECT * FROM regions WHERE id = ?').get(Number(req.params.id)));
@@ -864,6 +950,7 @@ function createApp(db) {
     // the admin panel lives at /admin and asks for the admin password.
     const publicDir = path.join(__dirname, '..', 'public');
     app.get('/', (req, res) => res.sendFile(path.join(publicDir, 'calculator.html')));
+    app.get(['/overhead', '/overhead/'], (req, res) => res.sendFile(path.join(publicDir, 'overhead.html')));
     app.get(['/admin', '/admin/'], (req, res) => res.sendFile(path.join(publicDir, 'admin.html')));
     app.get(['/index.html', '/admin.html'], (req, res) => res.redirect(301, '/admin'));
     app.use(express.static(publicDir, { index: false }));

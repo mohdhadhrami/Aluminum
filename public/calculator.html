@@ -10,160 +10,12 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        /* Same visual identity as the company site's calculators (radma.co/price-calc) */
-        :root {
-            --radma-primary: #1e40af;
-            --radma-primary-dark: #1e3a8a;
-            --radma-accent: #2563eb;
-            --radma-success: #16a34a;
-            --radma-whatsapp: #25D366;
-            --radma-whatsapp-dark: #128C7E;
-            --radma-danger: #dc2626;
-            --radma-bg: #f1f5f9;
-            --radma-card-bg: #ffffff;
-            --radma-border: #e2e8f0;
-            --radma-text: #1e293b;
-            --radma-text-muted: #64748b;
-            --radma-radius: 16px;
-            --radma-radius-sm: 10px;
-            --radma-shadow: 0 6px 20px -6px rgba(30, 58, 138, 0.12);
-        }
-        * { font-family: 'Tajawal', sans-serif; box-sizing: border-box; }
-        html { -webkit-text-size-adjust: 100%; }
-        body {
-            margin: 0; min-height: 100vh; display: flex; flex-direction: column; color: var(--radma-text);
-            background: radial-gradient(800px 300px at 90% -5%, rgba(37, 99, 235, 0.06), transparent 60%), var(--radma-bg);
-            -webkit-font-smoothing: antialiased;
-        }
-        ::selection { background: #1d4ed8; color: #fff; }
-        [hidden] { display: none !important; }
-
-        /* Embedded in another site (iframe): the host page provides header and footer */
-        html.embedded body { background: transparent; min-height: 0; }
-        html.embedded .site-header, html.embedded .site-footer { display: none; }
-        html.embedded .site-main { padding: 0; max-width: none; }
-        html.embedded .calc-container { box-shadow: none; }
-
-        /* ---------- Header ---------- */
-        .site-header {
-            position: sticky; top: 0; z-index: 50; padding: 12px 16px;
-            background: rgba(255, 255, 255, 0.9); border-bottom: 1px solid var(--radma-border);
-            -webkit-backdrop-filter: blur(12px) saturate(160%); backdrop-filter: blur(12px) saturate(160%);
-            box-shadow: 0 1px 0 rgba(15, 23, 42, 0.05);
-        }
-        .header-inner { max-width: 960px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-        .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--radma-text); min-height: 48px; }
-        .brand img { height: 48px; width: auto; }
-        .brand-name { font-size: 1.05rem; font-weight: 700; line-height: 1.3; }
-        .site-link { color: var(--radma-accent); text-decoration: none; font-weight: 700; font-size: 0.9rem; padding: 10px 8px; }
-        .site-link:hover { text-decoration: underline; }
-
-        /* ---------- Content ---------- */
-        .site-main { flex: 1; width: 100%; max-width: 960px; margin: 0 auto; padding: 20px 16px 40px; }
-        .calc-container {
-            max-width: 800px; margin: 0 auto; background: var(--radma-card-bg); padding: 30px;
-            border-radius: var(--radma-radius); box-shadow: var(--radma-shadow); border: 1px solid rgba(15, 23, 42, 0.05);
-        }
-        @media (max-width: 480px) { .calc-container { padding: 20px 16px; } }
-        .calc-header { text-align: center; margin-bottom: 30px; }
-        .calc-header img { max-width: 150px; height: auto; margin-bottom: 15px; }
-        .calc-header h1 { font-size: 1.5rem; margin: 0 0 8px; color: var(--radma-primary); }
-        .calc-header p { color: var(--radma-text-muted); margin: 0 0 8px; }
-        .color-offer { color: var(--radma-danger); font-weight: bold; }
-
-        .section {
-            margin-bottom: 30px; padding: 20px; border: 1px solid var(--radma-border);
-            border-radius: var(--radma-radius-sm); background: #fff; transition: box-shadow .25s ease;
-        }
-        .section:focus-within { box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08); }
-        .section h2 { font-size: 1.15rem; margin: 0 0 15px; color: var(--radma-primary); }
-        .icon { margin-left: 8px; }
-        .input-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; color: var(--radma-text); font-weight: 700; }
-        input, select, textarea {
-            width: 100%; padding: 12px; border: 1px solid #cfd8e0; border-radius: var(--radma-radius-sm);
-            margin-bottom: 10px; font-size: 16px; background: #fff; color: var(--radma-text);
-            transition: border-color .2s ease, box-shadow .2s ease;
-        }
-        input:focus-visible, select:focus-visible, textarea:focus-visible {
-            outline: none; border-color: var(--radma-accent); box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
-        }
-        select:disabled { background: #f8fafc; color: var(--radma-text-muted); }
-        .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
-        @media (max-width: 480px) { .row-2 { grid-template-columns: 1fr; } }
-        .description { color: #666; font-size: 14px; margin-top: -2px; margin-bottom: 12px; line-height: 1.7; }
-        .dimension-note { font-size: 13px; color: var(--radma-text-muted); margin-top: -4px; margin-bottom: 10px; font-style: italic; }
-        .color-dot { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 1px solid #cfd8e0; vertical-align: -2px; margin-left: 6px; }
-
-        .acc-item { padding-bottom: 6px; margin-bottom: 12px; border-bottom: 1px dashed var(--radma-border); }
-        .acc-item:last-child { border-bottom: none; margin-bottom: 0; }
-        .acc-item .acc-price { float: left; color: var(--radma-success); font-weight: 700; font-size: 14px; }
-
-        button {
-            background: var(--radma-primary); color: white; border: none; padding: 14px 25px;
-            border-radius: var(--radma-radius-sm); cursor: pointer; font-size: 16px; font-weight: 700;
-            display: block; margin: 20px auto; min-height: 48px;
-            box-shadow: 0 10px 24px -10px rgba(30, 64, 175, 0.5);
-            transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
-        }
-        button:hover { background: var(--radma-primary-dark); transform: translateY(-2px); }
-        button:active { transform: translateY(0); }
-        button:focus-visible { outline: 3px solid var(--radma-accent); outline-offset: 2px; }
-        button:disabled { background: #90a0af; cursor: not-allowed; box-shadow: none; transform: none; }
-        .whatsapp-btn {
-            background: var(--radma-whatsapp); display: flex; align-items: center; justify-content: center; gap: 10px;
-            box-shadow: 0 10px 24px -10px rgba(18, 140, 126, 0.55);
-        }
-        .whatsapp-btn:hover { background: var(--radma-whatsapp-dark); }
-        a.link-btn {
-            display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px;
-            padding: 14px 25px; border-radius: var(--radma-radius-sm); font-weight: 700; font-size: 16px;
-            text-decoration: none; color: #fff; background: var(--radma-primary);
-            box-shadow: 0 10px 24px -10px rgba(30, 64, 175, 0.5); transition: transform .2s ease, background .2s ease;
-        }
-        a.link-btn:hover { background: var(--radma-primary-dark); transform: translateY(-2px); }
-        a.link-btn.whatsapp-btn { background: var(--radma-whatsapp); box-shadow: 0 10px 24px -10px rgba(18, 140, 126, 0.55); }
-        a.link-btn.whatsapp-btn:hover { background: var(--radma-whatsapp-dark); }
-
-        .result { text-align: center; font-size: 24px; color: var(--radma-success); font-weight: bold; margin: 20px 0 10px; }
-        .breakdown {
-            max-width: 560px; margin: 0 auto 10px; font-size: 14px; border: 1px solid var(--radma-border);
-            border-radius: var(--radma-radius-sm); overflow: hidden;
-        }
-        .breakdown div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 14px; }
-        .breakdown div:nth-child(even) { background: #f8fafc; }
-        .breakdown div span:first-child { color: var(--radma-text-muted); }
-        .breakdown .total-row { background: #eef4ff !important; font-weight: 700; }
-        .breakdown .total-row span:first-child { color: var(--radma-primary); }
-        .fees-note { text-align: center; color: var(--radma-text-muted); font-size: 13px; margin-bottom: 6px; }
-
-        .notes { color: var(--radma-text-muted); font-size: 14px; margin-top: 20px; text-align: center; line-height: 1.8; }
-        .submit-status { text-align: center; font-weight: 700; border-radius: var(--radma-radius-sm); margin: 15px auto; max-width: 600px; line-height: 1.8; }
-        .submit-status:not(:empty) { padding: 14px 16px; }
-        .status-pending { background: #eaf2fb; color: #1f5d8f; }
-        .status-success { background: #e8f8ef; color: #1d7a43; }
-        .status-error { background: #fdecea; color: #a93226; }
-        .success-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
-        .success-actions a, .success-actions button { margin: 0; }
-        .quote-ref { direction: ltr; display: inline-block; font-size: 1.3em; }
-
-        /* ---------- Footer ---------- */
-        .site-footer { background: linear-gradient(135deg, #172554 0%, #1e3a8a 100%); color: #ecf0f1; margin-top: 40px; padding: 26px 16px; }
-        .footer-inner {
-            max-width: 960px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 10px 30px;
-            align-items: center; justify-content: center; text-align: center; line-height: 1.9;
-        }
-        .footer-brand { font-weight: 700; font-size: 1.05rem; width: 100%; }
-        .site-footer a { color: #aed6f1; text-decoration: none; }
-        .site-footer a:hover { text-decoration: underline; }
-        .copyright { width: 100%; font-size: 0.85rem; color: #bdc3c7; margin-top: 6px; }
-    </style>
+    <link rel="stylesheet" href="calc.css">
 </head>
 <body>
     <header class="site-header">
         <div class="header-inner">
-            <a class="brand" href="calculator.html">
+            <a class="brand" href="/">
                 <img src="images/logo.png" alt="الشعار" width="48" height="48">
                 <span class="brand-name" data-bind="company_name"></span>
             </a>
@@ -172,6 +24,10 @@
     </header>
 
     <main class="site-main">
+        <nav class="calc-switch" aria-label="الحاسبات">
+            <a href="/" aria-current="page">رولينج شتر</a>
+            <a href="/overhead">أوفرهيد</a>
+        </nav>
         <div class="calc-container">
             <div class="calc-header">
                 <img src="images/logo.png" alt="الشعار">
@@ -271,14 +127,9 @@
         </div>
     </footer>
 
+    <script src="calc-common.js"></script>
     <script src="location.js"></script>
     <script>
-    const $ = (id) => document.getElementById(id);
-    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    const money = (n) => Number(n).toFixed(2);
-    // Isolate each part so mixed Arabic/Latin labels ("العماني Napco" — "1.5 ملم") keep their order
-    const parts = (...list) => list.filter(Boolean).map((p) => `<bdi>${esc(p)}</bdi>`).join(' — ');
-    const NOTE_ICONS = ['fa-info-circle', 'fa-exclamation-triangle', 'fa-shield-alt', 'fa-check-circle'];
 
     let conf = null;
     let region = null;
@@ -291,12 +142,6 @@
     });
     const sizeValid = () => { const s = size(); return s.width >= 50 && s.width <= 1500 && s.height >= 50 && s.height <= 1000; };
 
-    function setStatus(kind, message) {
-        const el = $('submitStatus');
-        el.className = 'submit-status' + (kind ? ' status-' + kind : '');
-        el.innerHTML = message || '';
-    }
-
     async function load() {
         try {
             const res = await fetch('/api/public/configurator');
@@ -306,7 +151,7 @@
             $('calcForm').innerHTML = '<div class="submit-status status-error">تعذر تحميل الحاسبة. يرجى المحاولة لاحقاً.</div>';
             return;
         }
-        renderCompany();
+        renderCompany(conf, 'حاسبة أسعار بوابات الرولينج شتر');
         renderAccessories();
         setupLocationPicker(conf.locations, $('governorate'), $('state'), (w) => { region = w; invalidate(); });
 
@@ -316,29 +161,6 @@
         $('variant').addEventListener('change', () => { renderVariantDetails(); invalidate(); });
         $('color').addEventListener('change', () => { renderColorDot(); invalidate(); });
         for (const id of ['width', 'height', 'count']) $(id).addEventListener('input', invalidate);
-    }
-
-    function renderCompany() {
-        document.querySelectorAll('[data-bind]').forEach((el) => { el.textContent = conf[el.dataset.bind] || ''; });
-        document.title = 'حاسبة أسعار بوابات الرولينج شتر | ' + conf.company_name;
-        const notice = conf.calculator_notice || '';
-        $('topNotice').textContent = notice ? '🏷️' + notice + '🏷️' : '';
-        $('bottomNotice').textContent = notice;
-        $('notesBox').innerHTML = String(conf.calculator_notes || '').split('\n').filter((l) => l.trim())
-            .map((l, i) => `<i class="fas ${NOTE_ICONS[i % NOTE_ICONS.length]}"></i> ${esc(l.trim())}`).join('<br>');
-        const site = (conf.company_website || '').trim();
-        if (site) {
-            const href = /^https?:\/\//.test(site) ? site : 'https://' + site;
-            $('siteLink').href = href; $('siteLink').textContent = site.replace(/^https?:\/\//, ''); $('siteLink').hidden = false;
-            const a = $('footSite').querySelector('a'); a.href = href; a.textContent = $('siteLink').textContent; $('footSite').hidden = false;
-        }
-        if (conf.company_phone) {
-            const a = $('footPhone').querySelector('a');
-            a.href = 'tel:' + conf.company_phone.replace(/[^\d+]/g, '');
-            a.textContent = conf.company_phone; $('footPhone').hidden = false;
-        }
-        if (conf.company_address) { $('footAddress').querySelector('span').textContent = conf.company_address; $('footAddress').hidden = false; }
-        $('year').textContent = new Date().getFullYear();
     }
 
     const currentVariant = () => {
@@ -482,26 +304,6 @@
         if (lastPrice.whatsapp_link) $('waLink').href = lastPrice.whatsapp_link;
         $('resultBox').hidden = false;
         scrollToEl($('result'));
-    }
-
-    /* ---------- Embedding (radma.co iframe via embed.js) ---------- */
-    const embedded = window.self !== window.top || new URLSearchParams(location.search).has('embed');
-    const tellParent = (msg) => { if (window.parent !== window) window.parent.postMessage({ source: 'radma-calculator', ...msg }, '*'); };
-
-    /* Inside an iframe, ask the host page to scroll; otherwise scroll this page */
-    function scrollToEl(el) {
-        if (embedded) tellParent({ type: 'scroll', top: el === document.body ? 0 : el.getBoundingClientRect().top + window.scrollY - 40 });
-        else if (el === document.body) window.scrollTo({ top: 0, behavior: 'smooth' });
-        else el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-
-    if (embedded) {
-        document.documentElement.classList.add('embedded');
-        // Keep the iframe exactly as tall as the calculator, so the host page never shows a scrollbar inside it
-        // Measure the content (body), not the document: inside an iframe the document is never shorter than the frame
-        const report = () => tellParent({ type: 'height', height: Math.ceil(document.body.getBoundingClientRect().height) });
-        new ResizeObserver(report).observe(document.body);
-        window.addEventListener('load', report);
     }
 
     load();

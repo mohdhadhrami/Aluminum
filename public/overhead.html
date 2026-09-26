@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>حاسبة أسعار بوابات الأوفرهيد</title>
+    <meta name="description" content="احسب السعر التقديري لبوابات الأوفرهيد السكشنال — اختر النوع والمقاس والمحرك والولاية واطلب عرض سعر.">
+    <link rel="icon" type="image/png" href="images/logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="calc.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a class="brand" href="/">
+                <img src="images/logo.png" alt="الشعار" width="48" height="48">
+                <span class="brand-name" data-bind="company_name"></span>
+            </a>
+            <a class="site-link" id="siteLink" target="_blank" rel="noopener" hidden></a>
+        </div>
+    </header>
+
+    <main class="site-main">
+        <nav class="calc-switch" aria-label="الحاسبات">
+            <a href="/">رولينج شتر</a>
+            <a href="/overhead" aria-current="page">أوفرهيد</a>
+        </nav>
+        <div class="calc-container">
+            <div class="calc-header">
+                <img src="images/logo.png" alt="الشعار">
+                <h1>حاسبة أسعار بوابات الأوفرهيد</h1>
+                <p data-bind="company_tagline"></p>
+                <div class="color-offer" id="topNotice"></div>
+            </div>
+
+            <div id="calcForm">
+                <div class="section">
+                    <h2><i class="fas fa-user icon"></i> بيانات العميل</h2>
+                    <div class="input-group">
+                        <label for="clientName">اسم العميل:</label>
+                        <input type="text" id="clientName" autocomplete="name">
+                    </div>
+                    <div class="input-group">
+                        <label for="clientPhone">رقم الجوال:</label>
+                        <input type="tel" id="clientPhone" autocomplete="tel" inputmode="tel" placeholder="مثال: 9XXXXXXX">
+                    </div>
+                    <div class="input-group">
+                        <label for="governorate">المحافظة:</label>
+                        <select id="governorate"></select>
+                    </div>
+                    <div class="input-group">
+                        <label for="state">الولاية:</label>
+                        <select id="state"></select>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h2><i class="fas fa-warehouse icon"></i> مواصفات البوابة</h2>
+                    <div class="input-group">
+                        <label for="gateType">النوع:</label>
+                        <select id="gateType"></select>
+                    </div>
+                    <div class="input-group" id="dimensionsGroup" hidden>
+                        <label for="width">الأبعاد:</label>
+                        <select id="width"></select>
+                        <select id="height" aria-label="الارتفاع" hidden></select>
+                        <div class="dimension-note">يتم اختيار العرض والارتفاع وفقاً للمقاس الأقرب والأكبر من المقاس الفعلي</div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h2><i class="fas fa-cogs icon"></i> نوع المحرك</h2>
+                    <div class="input-group">
+                        <label for="motor">المحرك:</label>
+                        <select id="motor"></select>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label for="notes">ملاحظات (اختياري):</label>
+                    <textarea id="notes" rows="2"></textarea>
+                </div>
+
+                <button type="button" id="calcBtn" onclick="calculate()"><i class="fas fa-calculator icon"></i> احتساب السعر</button>
+                <div id="resultBox" hidden>
+                    <div class="result" id="result"></div>
+                    <div class="color-offer" style="text-align:center">إختلاف الأسعار معتمداً على اللون</div>
+                    <div class="breakdown" id="breakdown" style="margin-top:12px"></div>
+                    <div class="fees-note" id="feesNote"></div>
+                    <button type="button" class="whatsapp-btn" id="submitBtn" onclick="submitQuote()"><i class="fab fa-whatsapp"></i> إرسال طلب عرض السعر</button>
+                </div>
+            </div>
+
+            <div id="submitStatus" class="submit-status" role="status" aria-live="polite"></div>
+
+            <div id="successBox" hidden>
+                <div class="success-actions">
+                    <a class="link-btn" id="pdfLink" target="_blank" rel="noopener"><i class="fas fa-file-pdf"></i> تحميل عرض السعر PDF</a>
+                    <a class="link-btn whatsapp-btn" id="waLink" target="_blank" rel="noopener" hidden><i class="fab fa-whatsapp"></i> تابع عبر واتساب</a>
+                </div>
+                <button type="button" onclick="location.reload()" style="background:#64748b"><i class="fas fa-redo icon"></i> حساب بوابة أخرى</button>
+            </div>
+
+            <div class="color-offer" id="bottomNotice" style="text-align:center"></div>
+            <div class="notes" id="notesBox"></div>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <div class="footer-inner">
+            <span class="footer-brand" data-bind="company_name"></span>
+            <span id="footPhone" hidden>خدمة العملاء: <a dir="ltr"></a></span>
+            <span id="footAddress" hidden>الموقع: <span></span></span>
+            <span id="footSite" hidden>الموقع الإلكتروني: <a target="_blank" rel="noopener"></a></span>
+            <span class="copyright">© <span id="year"></span> <span data-bind="company_name"></span> — جميع الحقوق محفوظة</span>
+        </div>
+    </footer>
+
+    <script src="calc-common.js"></script>
+    <script src="location.js"></script>
+    <script>
+    /* Overhead gates: same method as the company site's overhead calculator —
+       type → standard size (nearest larger) → motor → wilayah; the price is a range. */
+    let conf = null;
+    let region = null;
+    let lastPrice = null;
+
+    const currentType = () => conf.gate_types.find((t) => t.name === $('gateType').value) || null;
+    const range = (from, to) => (to != null && to !== from ? `${money(from)} - ${money(to)}` : money(from));
+
+    async function load() {
+        try {
+            const res = await fetch('/api/public/overhead');
+            if (!res.ok) throw new Error();
+            conf = await res.json();
+        } catch {
+            $('calcForm').innerHTML = '<div class="submit-status status-error">تعذر تحميل الحاسبة. يرجى المحاولة لاحقاً.</div>';
+            return;
+        }
+        renderCompany(conf, 'حاسبة أسعار بوابات الأوفرهيد');
+        setupLocationPicker(conf.locations, $('governorate'), $('state'), (w) => { region = w; invalidate(); });
+
+        $('gateType').innerHTML = '<option value="">اختر النوع</option>' +
+            conf.gate_types.map((t) => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('');
+        $('motor').innerHTML = '<option value="">اختر المحرك</option>' +
+            conf.motors.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
+
+        $('gateType').addEventListener('change', () => { showDimensions(); invalidate(); });
+        $('width').addEventListener('change', () => { showHeights(); invalidate(); });
+        for (const id of ['height', 'motor']) $(id).addEventListener('change', invalidate);
+    }
+
+    /* Widths offered by the type (all its heights) */
+    function showDimensions() {
+        const t = currentType();
+        $('dimensionsGroup').hidden = !t;
+        const widths = t ? [...new Set(t.heights.flatMap((h) => h.widths))].sort((a, b) => a - b) : [];
+        $('width').innerHTML = '<option value="">اختر العرض</option>' +
+            widths.map((w) => `<option value="${w}">${w} سم</option>`).join('');
+        showHeights();
+    }
+
+    /* Heights that exist for the chosen width; a single standard height needs no choice (e.g. Type B: 250 سم) */
+    function showHeights() {
+        const t = currentType();
+        const width = Number($('width').value);
+        const heights = t ? t.heights.filter((h) => !width || h.widths.includes(width)).map((h) => h.height_cm) : [];
+        $('height').hidden = heights.length < 2;
+        $('height').innerHTML = (heights.length > 1 ? '<option value="">اختر الارتفاع</option>' : '') +
+            heights.map((h) => `<option value="${h}">${h} سم</option>`).join('');
+    }
+
+    /* Any change clears the previous result, so a stale price is never shown or sent */
+    function invalidate() {
+        lastPrice = null;
+        $('resultBox').hidden = true;
+        if ($('submitStatus').classList.contains('status-error')) setStatus('', '');
+    }
+
+    function missing() {
+        if (!region) return 'يرجى اختيار المحافظة والولاية.';
+        if (!currentType()) return 'يرجى اختيار نوع البوابة.';
+        if (!$('width').value) return 'يرجى اختيار العرض.';
+        if (!$('height').value) return 'يرجى اختيار الارتفاع.';
+        if (!$('motor').value) return 'يرجى اختيار المحرك.';
+        return null;
+    }
+
+    const payload = () => ({
+        gate_type: $('gateType').value, width_cm: Number($('width').value), height_cm: Number($('height').value),
+        motor_id: Number($('motor').value) || null, region_id: region ? region.id : null
+    });
+
+    async function calculate() {
+        const problem = missing();
+        if (problem) { setStatus('error', '⚠️ ' + esc(problem)); return; }
+        setStatus('', '');
+        const btn = $('calcBtn');
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/public/overhead-price', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload())
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'تعذر حساب السعر');
+            lastPrice = data;
+            showPrice();
+        } catch (err) {
+            setStatus('error', esc(err.message));
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    function showPrice() {
+        const p = lastPrice;
+        $('result').innerHTML = `السعر الإجمالي: <span style="font-size:1.2em" dir="ltr">${range(p.total, p.range.total_to)}</span> ريال عماني`;
+        $('breakdown').innerHTML = p.items.map((i) =>
+            `<div><span>${parts(i.name, i.type)}</span><span dir="ltr">${range(i.line_total, i.line_total_to)}</span></div>`).join('') +
+            `<div><span>المجموع</span><span dir="ltr">${range(p.subtotal, p.range.subtotal_to)}</span></div>` +
+            `<div><span>ضريبة القيمة المضافة ${p.vat_percent}%</span><span dir="ltr">${range(p.vat, p.range.vat_to)}</span></div>` +
+            `<div class="total-row"><span>الإجمالي (ر.ع)</span><span dir="ltr">${range(p.total, p.range.total_to)}</span></div>`;
+        $('feesNote').textContent = p.delivery_installation;
+        $('resultBox').hidden = false;
+        scrollToEl($('result'));
+    }
+
+    async function submitQuote() {
+        const name = $('clientName').value.trim();
+        const phone = $('clientPhone').value.trim();
+        if (!name) return setStatus('error', 'يرجى إدخال اسم العميل قبل طلب عرض السعر.');
+        if (!phone) return setStatus('error', 'يرجى إدخال رقم الجوال (مثال: 9XXXXXXX).');
+        if (!lastPrice) return setStatus('error', 'يرجى احتساب السعر قبل الإرسال.');
+        const btn = $('submitBtn');
+        btn.disabled = true;
+        setStatus('pending', 'جاري إرسال الطلب...');
+        try {
+            const res = await fetch('/api/public/overhead-quotes', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...payload(), customer_name: name, customer_phone: phone, notes: $('notes').value })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'تعذر إرسال الطلب');
+            setStatus('success', `✅ تم استلام طلبك بنجاح — رقم عرض السعر: <span class="quote-ref">${esc(data.ref)}</span><br>
+                الإجمالي: <span dir="ltr">${range(data.total, data.details.range.total_to)}</span> ريال عماني — سيتواصل معك فريقنا قريباً.`);
+            $('pdfLink').href = data.pdf_url;
+            if (data.whatsapp_link) { $('waLink').href = data.whatsapp_link; $('waLink').hidden = false; }
+            $('calcForm').hidden = true;
+            $('successBox').hidden = false;
+            scrollToEl(document.body);
+        } catch (err) {
+            setStatus('error', esc(err.message));
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    load();
+    </script>
+</body>
+</html>
