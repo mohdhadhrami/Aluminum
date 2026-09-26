@@ -1,6 +1,7 @@
 /* =============================================================
    Aluminum pricing server — REST API + static pages
    ============================================================= */
+const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 // The built-in SQLite database needs Node.js 22.13 or newer — say so clearly instead of crashing
@@ -19,6 +20,7 @@ const whatsapp = require('./whatsapp');
 const doors = require('./doors');
 const agent = require('./agent');
 const mazbot = require('./mazbot');
+const backup = require('./backup');
 const { renderQuotePdf } = require('./pdf');
 
 const APP_VERSION = require('../package.json').version;
@@ -244,7 +246,7 @@ function createApp(db) {
     /* Status check for the hosting panel / uptime monitors */
     app.get('/healthz', (req, res) => {
         db.prepare('SELECT 1').get();
-        res.json({ ok: true, version: APP_VERSION, features: ['quote_terms', 'mazbot'], node: process.versions.node });
+        res.json({ ok: true, version: APP_VERSION, features: ['quote_terms', 'mazbot', 'backup'], node: process.versions.node });
     });
 
     /* ------------------------- Public API ------------------------- */
@@ -672,12 +674,6 @@ function createApp(db) {
         });
     });
 
-    /* Replace shutter types and installation fees with the company site's catalog */
-    admin.post('/import/radma-catalog', (req, res) => {
-        require('./radma-catalog').applyRadmaCatalog(db);
-        res.json({ ok: true, shutter_types: db.prepare('SELECT COUNT(*) AS n FROM shutter_types').get().n });
-    });
-
     admin.get('/governorates', (req, res) => res.json(db.prepare('SELECT * FROM governorates ORDER BY sort_order, name').all()));
 
     admin.put('/governorates/:id', (req, res) => {
@@ -716,6 +712,47 @@ function createApp(db) {
         if (!info.changes) throw httpError(404, 'الولاية غير موجودة');
         res.json(db.prepare('SELECT * FROM regions WHERE id = ?').get(Number(req.params.id)));
     });
+
+    /* ---- Backup: the whole database as an Excel file, and restore from it ---- */
+
+    const sendXlsx = (res, buffer, name) => {
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+        res.send(buffer);
+    };
+
+    admin.get('/backup.xlsx', asyncRoute(async (req, res) => {
+        sendXlsx(res, await backup.exportWorkbook(db), `radma-backup-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    }));
+
+    admin.get('/backups', (req, res) => res.json(backup.listBackups()));
+
+    admin.get('/backups/:name', (req, res) => {
+        const file = backup.backupPath(req.params.name);
+        if (!file) throw httpError(404, 'النسخة غير موجودة');
+        sendXlsx(res, fs.readFileSync(file), req.params.name);
+    });
+
+    /* Restoring replaces everything, so the client must confirm explicitly;
+       the current data is saved first so the restore itself can be undone */
+    const restore = async (req, buffer) => {
+        if (req.get('X-Confirm-Restore') !== 'yes') throw httpError(400, 'يلزم تأكيد الاستعادة');
+        const saved = await backup.saveBackup(db, 'before-restore');
+        const counts = await backup.restoreWorkbook(db, buffer);
+        webhooks.emit(db, 'database.restored', { counts });
+        return { ok: true, counts, saved_before_restore: saved };
+    };
+
+    admin.post('/restore', express.raw({ type: () => true, limit: '25mb' }), asyncRoute(async (req, res) => {
+        if (!Buffer.isBuffer(req.body) || !req.body.length) throw httpError(400, 'اختر ملف النسخة الاحتياطية');
+        res.json(await restore(req, req.body));
+    }));
+
+    admin.post('/backups/:name/restore', asyncRoute(async (req, res) => {
+        const file = backup.backupPath(req.params.name);
+        if (!file) throw httpError(404, 'النسخة غير موجودة');
+        res.json(await restore(req, fs.readFileSync(file)));
+    }));
 
     /* ---- MazBot: WhatsApp template to the sales numbers ---- */
 
@@ -849,6 +886,7 @@ function start() {
     started = true;
     try { process.loadEnvFile(); } catch { /* .env is optional */ }
     const db = openDatabase();
+    backup.scheduleDailyBackups(db);
     // PORT is usually a number; some hosting runners pass a socket path instead
     const port = process.env.PORT || 3000;
     createApp(db).listen(/^\d+$/.test(String(port)) ? Number(port) : port, () => {
