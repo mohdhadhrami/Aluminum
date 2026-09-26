@@ -46,6 +46,18 @@ test('only the customer pages can be framed, and only by the allowed sites', asy
     }
 });
 
+test('PDFs, API data and pages are never served stale by a CDN', async (t) => {
+    const { server, base } = await start();
+    t.after(() => server.close());
+    const health = await fetch(base + '/healthz');
+    assert.strictEqual(health.headers.get('cache-control'), 'no-store');
+    assert.strictEqual((await health.json()).version, require('../package.json').version);
+    assert.strictEqual((await fetch(base + '/api/public/configurator')).headers.get('cache-control'), 'no-store');
+    assert.strictEqual((await fetch(base + '/quotes/X.pdf?k=y')).headers.get('cache-control'), 'no-store');
+    assert.strictEqual((await fetch(base + '/')).headers.get('cache-control'), 'no-cache');
+    assert.strictEqual((await fetch(base + '/admin.js')).headers.get('cache-control'), 'no-cache');
+});
+
 test('admin API locks an IP out after repeated wrong passwords', async (t) => {
     const { server, base } = await start();
     t.after(() => server.close());

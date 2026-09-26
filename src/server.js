@@ -20,6 +20,7 @@ const doors = require('./doors');
 const agent = require('./agent');
 const { renderQuotePdf } = require('./pdf');
 
+const APP_VERSION = require('../package.json').version;
 const CATEGORIES = ['slat', 'accessory', 'machine'];
 const UNITS = ['meter', 'piece', 'm2', 'set', 'kg'];
 const QUOTE_STATUSES = ['new', 'contacted', 'accepted', 'rejected', 'done'];
@@ -186,6 +187,13 @@ function createApp(db) {
     app.use((req, res, next) => {
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+        // Never let a hosting CDN keep stale copies: PDFs, API data and the health check are
+        // always fresh; pages, scripts and styles must be revalidated (cheap, thanks to ETags).
+        if (req.path.startsWith('/api/') || req.path.startsWith('/quotes/') || req.path === '/healthz') {
+            res.setHeader('Cache-Control', 'no-store');
+        } else if (!/\.(png|jpe?g|webp|gif|svg|ico|woff2?)$/i.test(req.path)) {
+            res.setHeader('Cache-Control', 'no-cache');
+        }
         if (customerPages.has(req.path)) {
             res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${embedOrigins()}`.trim());
         } else {
@@ -200,7 +208,7 @@ function createApp(db) {
     /* Status check for the hosting panel / uptime monitors */
     app.get('/healthz', (req, res) => {
         db.prepare('SELECT 1').get();
-        res.json({ ok: true, node: process.versions.node });
+        res.json({ ok: true, version: APP_VERSION, features: ['quote_terms'], node: process.versions.node });
     });
 
     /* ------------------------- Public API ------------------------- */
