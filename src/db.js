@@ -281,6 +281,7 @@ function seedConfigurator(db) {
     // Overhead gates: start from the company site's overhead calculator (also on existing databases)
     const overhead = db.prepare('SELECT (SELECT COUNT(*) FROM overhead_sizes) + (SELECT COUNT(*) FROM overhead_motors) AS n').get();
     if (overhead.n === 0) require('./radma-catalog').applyOverheadCatalog(db);
+    require('./radma-catalog').addDefaultOverheadSizes(db);
 
     if (db.prepare('SELECT COUNT(*) AS n FROM accessory_groups').get().n > 0) return;
     const findOrCreate = (p, category) => {

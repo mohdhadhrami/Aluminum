@@ -64,8 +64,10 @@
                         <select id="gateType"></select>
                     </div>
                     <div class="input-group" id="dimensionsGroup" hidden>
-                        <label for="size">المقاس (العرض × الارتفاع):</label>
-                        <select id="size"></select>
+                        <label for="width">العرض:</label>
+                        <select id="width"></select>
+                        <label for="height">الارتفاع:</label>
+                        <select id="height"></select>
                         <div class="dimension-note">اختر المقاس الأقرب والأكبر من مقاس الفتحة الفعلي</div>
                     </div>
                 </div>
@@ -143,17 +145,30 @@
             conf.motors.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
 
         $('gateType').addEventListener('change', () => { showSizes(); invalidate(); });
-        for (const id of ['size', 'motor']) $(id).addEventListener('change', invalidate);
+        $('width').addEventListener('change', () => { showHeights(); invalidate(); });
+        for (const id of ['height', 'motor']) $(id).addEventListener('change', invalidate);
     }
 
-    /* One list of the type's standard sizes (width × height), grouped by height */
+    /* Width and height are chosen separately, from the type's standard sizes in the price table */
     function showSizes() {
         const t = currentType();
         $('dimensionsGroup').hidden = !t;
-        $('size').innerHTML = '<option value="">اختر المقاس</option>' + (t ? t.heights.map((h) =>
-            `<optgroup label="الارتفاع ${h.height_cm} سم">` +
-            h.widths.map((w) => `<option value="${w}|${h.height_cm}">العرض ${w} سم × الارتفاع ${h.height_cm} سم</option>`).join('') +
-            '</optgroup>').join('') : '');
+        const widths = t ? [...new Set(t.heights.flatMap((h) => h.widths))].sort((a, b) => a - b) : [];
+        $('width').innerHTML = '<option value="">اختر العرض</option>' +
+            widths.map((w) => `<option value="${w}">${w} سم</option>`).join('');
+        showHeights();
+    }
+
+    /* Heights that have a price for the chosen width (e.g. 250 and 300 سم) */
+    function showHeights() {
+        const t = currentType();
+        const width = Number($('width').value);
+        const keep = $('height').value;
+        const heights = t && width ? t.heights.filter((h) => h.widths.includes(width)).map((h) => h.height_cm) : [];
+        $('height').disabled = !width;
+        $('height').innerHTML = '<option value="">' + (width ? 'اختر الارتفاع' : 'اختر العرض أولاً') + '</option>' +
+            heights.map((h) => `<option value="${h}">${h} سم</option>`).join('');
+        if (heights.map(String).includes(keep)) $('height').value = keep;
     }
 
     /* Any change clears the previous result, so a stale price is never shown */
@@ -166,18 +181,16 @@
     function missing() {
         if (!region) return 'يرجى اختيار المحافظة والولاية.';
         if (!currentType()) return 'يرجى اختيار نوع البوابة.';
-        if (!$('size').value) return 'يرجى اختيار المقاس.';
+        if (!$('width').value) return 'يرجى اختيار العرض.';
+        if (!$('height').value) return 'يرجى اختيار الارتفاع.';
         if (!$('motor').value) return 'يرجى اختيار المحرك.';
         return null;
     }
 
-    const payload = () => {
-        const [width, height] = $('size').value.split('|').map(Number);
-        return {
-            gate_type: $('gateType').value, width_cm: width || null, height_cm: height || null,
-            motor_id: Number($('motor').value) || null, region_id: region ? region.id : null
-        };
-    };
+    const payload = () => ({
+        gate_type: $('gateType').value, width_cm: Number($('width').value) || null, height_cm: Number($('height').value) || null,
+        motor_id: Number($('motor').value) || null, region_id: region ? region.id : null
+    });
 
     /* "احتساب السعر": the price is calculated on the server and the request (with all the data)
        goes straight to the sales team on WhatsApp — same as the rolling-shutter calculator */
