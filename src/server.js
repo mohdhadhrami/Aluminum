@@ -18,6 +18,7 @@ const webhooks = require('./webhooks');
 const whatsapp = require('./whatsapp');
 const doors = require('./doors');
 const agent = require('./agent');
+const mazbot = require('./mazbot');
 const { renderQuotePdf } = require('./pdf');
 
 const APP_VERSION = require('../package.json').version;
@@ -169,6 +170,34 @@ function saveQuote(db, { customer_name, customer_phone, customer_city, notes, so
     return quote;
 }
 
+/* The 7 values of the calculators' MazBot template (same order as the company site):
+   request no., name, mobile, location, gate type, size, estimated price */
+function templateValues(quote) {
+    const d = quote.details || {};
+    const gate = [d.shutter_type, d.variant, d.color].filter(Boolean).join(' ');
+    const extras = (d.accessories || []).map((a) => `${a.group}: ${a.option}`);
+    return [
+        quote.ref,
+        quote.customer_name,
+        quote.customer_phone,
+        [d.governorate, d.region].filter(Boolean).join(' - ') || quote.customer_city,
+        ['رولينج شتر ' + gate, ...extras].join(' / '),
+        `${d.width_cm}x${d.height_cm} سم` + (d.count > 1 ? ` × ${d.count} بوابات` : ''),
+        `${Number(quote.total).toFixed(3)} ريال عماني شامل الضريبة`
+    ];
+}
+
+/* WhatsApp template to the sales numbers (MazBot); the outcome is kept on the quote */
+async function notifySales(db, quote) {
+    if (!mazbot.isConfigured() || !quote.details || !quote.details.width_cm) return null; // calculator requests only
+    const recipients = mazbot.parseRecipients(getSettings(db).mazbot_recipients);
+    if (!recipients.length) return null;
+    const { sent, total, results } = await mazbot.sendToAll(recipients, templateValues(quote));
+    const status = sent === total ? `تم الإرسال ${sent}/${total}` : `فشل ${total - sent}/${total}: ${results.find((r) => !r.ok).error}`.slice(0, 300);
+    db.prepare('UPDATE quotes SET notify_status = ? WHERE id = ?').run(status, quote.id);
+    return status;
+}
+
 function sendPdf(res, quote, settings) {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="quotation-${quote.ref}.pdf"`);
@@ -208,7 +237,7 @@ function createApp(db) {
     /* Status check for the hosting panel / uptime monitors */
     app.get('/healthz', (req, res) => {
         db.prepare('SELECT 1').get();
-        res.json({ ok: true, version: APP_VERSION, features: ['quote_terms'], node: process.versions.node });
+        res.json({ ok: true, version: APP_VERSION, features: ['quote_terms', 'mazbot'], node: process.versions.node });
     });
 
     /* ------------------------- Public API ------------------------- */
@@ -243,12 +272,15 @@ function createApp(db) {
         return { customer_name: body.customer_name, customer_phone: phone, region, customer_city: `${region.name}، ${region.governorate}`, notes: body.notes };
     };
 
-    const quoteResponse = (res, quote) => {
+    const quoteResponse = (res, quote, { repeat = false } = {}) => {
         const settings = getSettings(db);
-        whatsapp.notifyQuote(db, quote).catch((err) => console.error('[whatsapp]', err.message));
+        if (!repeat) {
+            whatsapp.notifyQuote(db, quote).catch((err) => console.error('[whatsapp]', err.message));
+            notifySales(db, quote).catch((err) => console.error('[mazbot]', err.message));
+        }
         const waText = encodeURIComponent(`مرحباً، أرغب بمتابعة عرض السعر رقم ${quote.ref}`);
         const { access_key, ...publicQuote } = quote;
-        res.status(201).json({
+        res.status(repeat ? 200 : 201).json({
             ...publicQuote,
             whatsapp_link: settings.company_whatsapp
                 ? `https://wa.me/${whatsapp.normalizePhone(settings.company_whatsapp)}?text=${waText}`
@@ -303,14 +335,24 @@ function createApp(db) {
         res.json(publicPrice(doors.finalPrice(db, readDoor(req.body || {}))));
     });
 
+    /* "احتساب السعر" on the customer page: prices on the server, saves the quote and sends it to the
+       sales numbers on WhatsApp. Pressing it again with the same data returns the same quote
+       (no duplicate message); any change is a new request. */
     app.post('/api/public/door-quotes', quoteLimit, (req, res) => {
         const body = req.body || {};
         const customer = readCustomer(body);
         const priced = doors.finalPrice(db, { ...readDoor(body), regionId: customer.region.id });
-        quoteResponse(res, saveQuote(db, {
-            ...customer, source: 'web', priced,
-            details: { ...priced.door, spec: priced.spec, fees_note: priced.delivery_installation }
-        }));
+        const details = { ...priced.door, spec: priced.spec, fees_note: priced.delivery_installation };
+        const same = db.prepare(`SELECT * FROM quotes WHERE customer_phone = ? AND customer_name = ? AND details_json = ?
+                                 AND total = ? AND IFNULL(notes, '') = ? AND created_at >= datetime('now', '-30 minutes')
+                                 ORDER BY id DESC LIMIT 1`)
+            .get(customer.customer_phone, String(customer.customer_name).trim().slice(0, 120), JSON.stringify(details),
+                priced.total, customer.notes ? String(customer.notes).slice(0, 1000) : '');
+        if (same) {
+            const quote = parseQuote(same);
+            return quoteResponse(res, { ...quote, pdf_url: pdfPath(quote) }, { repeat: true });
+        }
+        quoteResponse(res, saveQuote(db, { ...customer, source: 'web', priced, details }));
     });
 
     /* Customer-facing PDF: the random key in the link is the access control */
@@ -667,6 +709,24 @@ function createApp(db) {
         if (!info.changes) throw httpError(404, 'الولاية غير موجودة');
         res.json(db.prepare('SELECT * FROM regions WHERE id = ?').get(Number(req.params.id)));
     });
+
+    /* ---- MazBot: WhatsApp template to the sales numbers ---- */
+
+    admin.get('/mazbot/status', (req, res) => res.json({
+        configured: mazbot.isConfigured(),
+        dry_run: process.env.MAZBOT_DRY_RUN === '1',
+        recipients: mazbot.parseRecipients(getSettings(db).mazbot_recipients)
+    }));
+
+    admin.post('/mazbot/test', asyncRoute(async (req, res) => {
+        if (!mazbot.isConfigured()) throw httpError(503, 'بيانات MazBot غير مضبوطة على الخادم');
+        const recipients = mazbot.parseRecipients(getSettings(db).mazbot_recipients);
+        if (!recipients.length) throw httpError(400, 'أضف أرقام الاستقبال أولاً');
+        const { sent, total, results } = await mazbot.sendToAll(recipients, [
+            'TEST', 'رسالة تجريبية', '96890000000', 'الداخلية - نزوى', 'رولينج شتر (تجربة)', '300x250 سم', '0.000 ريال عماني'
+        ]);
+        res.json({ sent, total, results: results.map(({ mobile, ok, error }) => ({ mobile, ok, error })) });
+    }));
 
     /* ---- AI agent test console (same agent as WhatsApp) ---- */
 

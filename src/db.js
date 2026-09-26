@@ -15,7 +15,9 @@ const DEFAULT_SETTINGS = {
     tax_mode: 'accounting',
     sqm_to_linear: 13,       // 1 م² = 13 متر طولي من الشرائح
     company_name: 'مصنع شرائح الألمنيوم',
-    company_whatsapp: '',    // رقم واتساب الشركة بالصيغة الدولية مثل 9689XXXXXXX
+    company_whatsapp: '',
+    // Sales numbers that get the MazBot WhatsApp template for every calculator request
+    mazbot_recipients: '76979066, 90660001',    // رقم واتساب الشركة بالصيغة الدولية مثل 9689XXXXXXX
     public_base_url: '',     // رابط الموقع العام، يستخدم في رسائل واتساب وروابط PDF
     quote_validity_days: 15, // مدة صلاحية عرض السعر
     // نصوص صفحة العميل (الترويسة والتذييل والملاحظات) — تُعدَّل من تبويب الربط
@@ -301,7 +303,8 @@ function migrate(db) {
             if (!cols.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${def}`);
         }
     };
-    addColumns('quotes', { access_key: 'TEXT', details_json: 'TEXT' });
+    // notify_status: result of the WhatsApp (MazBot) message to the sales numbers
+    addColumns('quotes', { access_key: 'TEXT', details_json: 'TEXT', notify_status: 'TEXT' });
     // Thickness/grade: its own description and the size allowance used for the slat area
     addColumns('shutter_variants', { description: 'TEXT', width_add_cm: 'REAL NOT NULL DEFAULT 0', height_add_cm: 'REAL NOT NULL DEFAULT 0' });
     // Colors can belong to one thickness (NULL = all), replace the price per m² and add a fixed fee

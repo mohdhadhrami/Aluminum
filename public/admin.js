@@ -88,6 +88,7 @@ function applySettings(s) {
     $id('calculatorNotice').value = s.calculator_notice || '';
     $id('calculatorNotes').value = s.calculator_notes || '';
     $id('quoteTerms').value = s.quote_terms || '';
+    $id('mazbotRecipients').value = s.mazbot_recipients || '';
     recalculateAll();
 }
 
@@ -113,7 +114,8 @@ async function saveSettingsToServer() {
             company_website: $id('companyWebsite').value,
             calculator_notice: $id('calculatorNotice').value,
             calculator_notes: $id('calculatorNotes').value,
-            quote_terms: $id('quoteTerms').value
+            quote_terms: $id('quoteTerms').value,
+            mazbot_recipients: $id('mazbotRecipients').value
         });
         applySettings(s);
         await loadProducts(); // LME-based prices depend on these settings
@@ -360,6 +362,7 @@ async function loadQuotes() {
             <td class="quote-items">${q.items.map((i) => `${esc(i.name)}${i.type ? ' — ' + esc(i.type) : ''}: ${i.quantity} × ${i.unit_price.toFixed(2)}`).join('<br>')}</td>
             <td><strong>${q.total.toFixed(2)}</strong></td>
             <td>${esc(SOURCE_NAMES[q.source] || q.source)}</td>
+            <td><small>${esc(q.notify_status || '—')}</small></td>
             <td>
                 <select onchange="setQuoteStatus(${q.id}, this.value)">
                     ${Object.entries(STATUS_NAMES).map(([k, v]) => `<option value="${k}" ${k === q.status ? 'selected' : ''}>${v}</option>`).join('')}
@@ -842,6 +845,24 @@ async function loadAgentStatus() {
     $id('agentModel').textContent = s.configured ? 'النموذج: ' + s.model : '';
 }
 
+async function loadMazbotStatus() {
+    const s = await api('GET', '/api/admin/mazbot/status');
+    $id('mazbotStatus').textContent = s.configured ? (s.dry_run ? 'وضع تجريبي (لا يرسل)' : 'مفعّل') : 'غير مفعّل — أضف بيانات MazBot في متغيرات البيئة';
+    $id('mazbotStatus').className = 'badge' + (s.configured ? ' on' : '');
+}
+
+async function testMazbot() {
+    setStatus('mazbotTestStatus', 'جاري الإرسال...');
+    try {
+        const r = await api('POST', '/api/admin/mazbot/test');
+        const failed = r.results.filter((x) => !x.ok);
+        setStatus('mazbotTestStatus', `تم الإرسال إلى ${r.sent} من ${r.total}` +
+            (failed.length ? ' — فشل: ' + failed.map((x) => `${x.mobile} (${x.error})`).join('، ') : ' ✓'), failed.length ? 'err' : 'ok');
+    } catch (err) {
+        setStatus('mazbotTestStatus', err.message, 'err');
+    }
+}
+
 async function sendChat() {
     const input = $id('chatInput');
     const message = input.value.trim();
@@ -889,7 +910,7 @@ window.switchTab = function (tabId) {
 async function initAdmin() {
     applySettings(await api('GET', '/api/admin/settings'));
     online = true;
-    await Promise.all([loadProducts(), loadPurchases(), loadHooks(), loadAgentStatus()]);
+    await Promise.all([loadProducts(), loadPurchases(), loadHooks(), loadAgentStatus(), loadMazbotStatus()]);
 }
 
 (async function boot() {
