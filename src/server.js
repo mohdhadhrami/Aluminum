@@ -170,19 +170,26 @@ function saveQuote(db, { customer_name, customer_phone, customer_city, notes, so
     return quote;
 }
 
-/* The 7 values of the calculators' MazBot template (same order as the company site):
-   request no., name, mobile, location, gate type, size, estimated price */
+/* Accessory slots of the MazBot template, found by the group name set in the admin panel */
+const TEMPLATE_ACCESSORIES = [['المسارات', 'مسار'], ['عمود', 'محور'], ['القواعد', 'قاعدة'], ['المحرك', 'محرك']];
+
+/* The 11 values of the calculators' MazBot template, in this order:
+   request no., name, mobile, location, gate type, size, channels, axle, bases, motor, price */
 function templateValues(quote) {
     const d = quote.details || {};
-    const gate = [d.shutter_type, d.variant, d.color].filter(Boolean).join(' ');
-    const extras = (d.accessories || []).map((a) => `${a.group}: ${a.option}`);
+    const spec = Array.isArray(d.spec) ? d.spec : [];
+    const accessory = (words) => {
+        const row = spec.find(([label]) => words.some((w) => label.includes(w)));
+        return row ? row[1] : '—';
+    };
     return [
         quote.ref,
         quote.customer_name,
         quote.customer_phone,
         [d.governorate, d.region].filter(Boolean).join(' - ') || quote.customer_city,
-        ['رولينج شتر ' + gate, ...extras].join(' / '),
-        `${d.width_cm}x${d.height_cm} سم` + (d.count > 1 ? ` × ${d.count} بوابات` : ''),
+        ['رولينج شتر', d.shutter_type, d.variant, d.color].filter(Boolean).join(' - '),
+        `العرض ${d.width_cm} سم × الارتفاع ${d.height_cm} سم` + (d.count > 1 ? ` (عدد ${d.count} بوابات)` : ''),
+        ...TEMPLATE_ACCESSORIES.map(accessory),
         `${Number(quote.total).toFixed(3)} ريال عماني شامل الضريبة`
     ];
 }
@@ -723,7 +730,8 @@ function createApp(db) {
         const recipients = mazbot.parseRecipients(getSettings(db).mazbot_recipients);
         if (!recipients.length) throw httpError(400, 'أضف أرقام الاستقبال أولاً');
         const { sent, total, results } = await mazbot.sendToAll(recipients, [
-            'TEST', 'رسالة تجريبية', '96890000000', 'الداخلية - نزوى', 'رولينج شتر (تجربة)', '300x250 سم', '0.000 ريال عماني'
+            'TEST', 'رسالة تجريبية', '96890000000', 'الداخلية - نزوى', 'رولينج شتر - الإيراني - Grade C - أبيض',
+            'العرض 300 سم × الارتفاع 250 سم', 'Class A', 'Class A', 'Class A', 'Class A', '0.000 ريال عماني شامل الضريبة'
         ]);
         res.json({ sent, total, results: results.map(({ mobile, ok, error }) => ({ mobile, ok, error })) });
     }));

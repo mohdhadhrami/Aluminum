@@ -95,10 +95,12 @@ test('"احتساب السعر" sends the MazBot template with all the data to b
     assert.strictEqual(f['body_values[2]'], 'أحمد');
     assert.strictEqual(f['body_values[3]'], '96899123456');
     assert.strictEqual(f['body_values[4]'], 'الداخلية - نزوى');
-    assert.match(f['body_values[5]'], /^رولينج شتر الإيراني Grade C بيج \/ /);
-    assert.strictEqual(f['body_values[6]'], '300x250 سم');
-    assert.strictEqual(f['body_values[7]'], `${quote.total.toFixed(3)} ريال عماني شامل الضريبة`);
-    assert.ok(!('body_values[8]' in f));
+    assert.strictEqual(f['body_values[5]'], 'رولينج شتر - الإيراني - Grade C - بيج');
+    assert.strictEqual(f['body_values[6]'], 'العرض 300 سم × الارتفاع 250 سم');
+    // Channels, axle, bases, motor — each in its own variable
+    assert.deepStrictEqual([7, 8, 9, 10].map((i) => f[`body_values[${i}]`]), ['Class A', 'Class A', 'Class A', 'Class A']);
+    assert.strictEqual(f['body_values[11]'], `${quote.total.toFixed(3)} ريال عماني شامل الضريبة`);
+    assert.ok(!('body_values[12]' in f));
 
     await waitFor(() => app.db.prepare('SELECT notify_status FROM quotes').get().notify_status);
     assert.strictEqual(app.db.prepare('SELECT notify_status FROM quotes').get().notify_status, 'تم الإرسال 2/2');
