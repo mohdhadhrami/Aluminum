@@ -576,19 +576,6 @@ function addColorRow(c = {}, variantIndex = '') {
     tr.querySelector('.c-variant').value = variantIndex === '' ? '' : String(variantIndex);
 }
 
-async function importRadmaCatalog() {
-    if (!confirm('سيتم استبدال أنواع البوابات الحالية وسماكاتها وألوانها، وأسعار التركيب والمحافظات المفعّلة، بأسعار حاسبة الموقع. الإكسسوارات لن تتغير. متابعة؟')) return;
-    try {
-        await api('POST', '/api/admin/import/radma-catalog');
-        setStatus('importStatus', 'تم الاستيراد ✓', 'ok');
-        await loadProducts();
-        resetTypeForm();
-        await loadDoors();
-    } catch (err) {
-        setStatus('importStatus', err.message, 'err');
-    }
-}
-
 function resetTypeForm() {
     $id('typeId').value = '';
     $id('typeFormTitle').textContent = 'إضافة نوع بوابة';
@@ -826,6 +813,97 @@ async function addRegion() {
     }
 }
 
+/* --------------------------- Backup / restore ------------------------ */
+
+const BACKUP_KINDS = { auto: 'تلقائية يومية', 'before-restore': 'قبل الاستعادة', manual: 'يدوية' };
+
+async function authFetch(method, url, body, headers = {}) {
+    let token = '';
+    try { token = localStorage.getItem('adminToken') || ''; } catch { /* storage blocked */ }
+    const res = await fetch(url, { method, body, headers: { Authorization: 'Bearer ' + token, ...headers } });
+    if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'تعذر تنفيذ العملية');
+    }
+    return res;
+}
+
+async function saveBlob(res, fallbackName) {
+    const name = (/filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '') || [])[1] || fallbackName;
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+async function downloadBackup() {
+    setStatus('backupStatus', 'جاري التجهيز...');
+    try {
+        await saveBlob(await authFetch('GET', '/api/admin/backup.xlsx'), 'radma-backup.xlsx');
+        setStatus('backupStatus', 'تم التنزيل ✓', 'ok');
+    } catch (err) {
+        setStatus('backupStatus', err.message, 'err');
+    }
+}
+
+async function loadBackups() {
+    const list = await api('GET', '/api/admin/backups');
+    $id('backupsBody').innerHTML = list.map((b) => `
+        <tr>
+            <td dir="ltr" style="text-align:right"><small>${esc(b.name)}</small></td>
+            <td>${esc(BACKUP_KINDS[b.kind] || b.kind)}</td>
+            <td>${esc(new Date(b.created_at).toLocaleString('ar-OM'))}</td>
+            <td>${(b.size / 1024).toFixed(0)} KB</td>
+            <td>
+                <button class="btn btn-outline btn-sm" onclick="downloadSaved('${esc(b.name)}')">تنزيل</button>
+                <button class="btn btn-outline btn-sm" onclick="restoreSaved('${esc(b.name)}')">استعادة</button>
+            </td>
+        </tr>`).join('') || '<tr><td colspan="5">لا توجد نسخ محفوظة بعد.</td></tr>';
+}
+
+async function downloadSaved(name) {
+    try { await saveBlob(await authFetch('GET', '/api/admin/backups/' + encodeURIComponent(name)), name); } catch (err) { alert(err.message); }
+}
+
+/* Restoring replaces all current data — ask the admin to type a confirmation word */
+function confirmRestore(what) {
+    const word = prompt(`سيتم استبدال كل البيانات الحالية بمحتوى ${what}.\n` +
+        'تُحفظ نسخة من البيانات الحالية تلقائياً قبل الاستعادة.\n\nللمتابعة اكتب: استعادة');
+    return word != null && word.trim() === 'استعادة';
+}
+
+async function afterRestore(r) {
+    const total = Object.values(r.counts).reduce((a, b) => a + b, 0);
+    applySettings(await api('GET', '/api/admin/settings'));
+    await Promise.all([loadProducts(), loadPurchases(), loadHooks()]);
+    await Promise.all([loadDoors(), loadBackups()]);
+    setStatus('backupStatus', `تمت الاستعادة ✓ (${total} سجل)`, 'ok');
+}
+
+async function restoreFromFile(input) {
+    const file = input.files[0];
+    input.value = '';
+    if (!file || !confirmRestore(`الملف «${file.name}»`)) return;
+    setStatus('backupStatus', 'جاري الاستعادة...');
+    try {
+        const res = await authFetch('POST', '/api/admin/restore', file, { 'Content-Type': 'application/octet-stream', 'X-Confirm-Restore': 'yes' });
+        await afterRestore(await res.json());
+    } catch (err) {
+        setStatus('backupStatus', err.message, 'err');
+    }
+}
+
+async function restoreSaved(name) {
+    if (!confirmRestore(`النسخة «${name}»`)) return;
+    setStatus('backupStatus', 'جاري الاستعادة...');
+    try {
+        const res = await authFetch('POST', '/api/admin/backups/' + encodeURIComponent(name) + '/restore', undefined, { 'X-Confirm-Restore': 'yes' });
+        await afterRestore(await res.json());
+    } catch (err) {
+        setStatus('backupStatus', err.message, 'err');
+    }
+}
+
 /* --------------------------- Agent console ------------------------- */
 
 const chatSession = 'admin-' + Math.random().toString(36).slice(2, 8);
@@ -904,7 +982,7 @@ window.switchTab = function (tabId) {
     if (!online) return;
     if (tabId === 'quotes') loadQuotes();
     if (tabId === 'products') renderProducts();
-    if (tabId === 'doors') loadDoors();
+    if (tabId === 'doors') { loadDoors(); loadBackups().catch(() => {}); }
 };
 
 async function initAdmin() {

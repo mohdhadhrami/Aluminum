@@ -1077,6 +1077,27 @@
 
         <!-- ==================== TAB: Roller shutter door configurator ==================== -->
         <div id="tab-doors" class="tab-content">
+            <!-- Backup & restore -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">⤓</span>
+                    النسخ الاحتياطي لقاعدة البيانات
+                </div>
+                <p class="status-text" style="margin-top:0">ملف Excel يحتوي كل البيانات: الأنواع والسماكات والألوان، والإكسسوارات، والمحافظات والولايات وأسعار التركيب، والمنتجات والمشتريات، وعروض الأسعار، والإعدادات. احتفظ بنسخة قبل أي تعديل كبير.</p>
+                <div class="form-buttons" style="margin-top:0">
+                    <button class="btn btn-primary" onclick="downloadBackup()">تنزيل نسخة Excel</button>
+                    <label class="btn btn-outline" style="cursor:pointer">استعادة من ملف…
+                        <input type="file" id="restoreFile" accept=".xlsx" hidden onchange="restoreFromFile(this)">
+                    </label>
+                    <span id="backupStatus" class="status-text"></span>
+                </div>
+                <p class="sub-heading">النسخ المحفوظة على الخادم <span class="status-text">— نسخة تلقائية كل يوم (آخر 14 يوماً)، ونسخة تلقائية قبل كل استعادة</span></p>
+                <div class="table-wrapper"><table>
+                    <thead><tr><th>النسخة</th><th>النوع</th><th>التاريخ</th><th>الحجم</th><th></th></tr></thead>
+                    <tbody id="backupsBody"></tbody>
+                </table></div>
+            </div>
+
             <div class="card">
                 <div class="card-title">
                     <span class="icon">?</span>
@@ -1098,12 +1119,6 @@
                 <div class="card-title">
                     <span class="icon">T</span>
                     <span id="typeFormTitle">إضافة نوع بوابة</span>
-                </div>
-                <div class="range-box" style="margin-bottom: 16px;">
-                    استيراد أنواع وأسعار حاسبة الموقع (الإيراني، التركي، العماني NAPCO) مع أسعار التركيب لكل ولاية.
-                    <strong style="font-size: 0.9rem;">يستبدل الأنواع الحالية وأسعار التركيب.</strong>
-                    <button class="btn btn-outline btn-sm" style="margin-inline-start: 10px;" onclick="importRadmaCatalog()">استيراد أسعار ردما</button>
-                    <span id="importStatus" class="status-text"></span>
                 </div>
                 <input type="hidden" id="typeId">
                 <div class="form-grid">

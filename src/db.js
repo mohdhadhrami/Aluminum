@@ -374,4 +374,4 @@ function saveSettings(db, patch) {
     return getSettings(db);
 }
 
-module.exports = { openDatabase, getSettings, saveSettings, DEFAULT_SETTINGS };
+module.exports = { openDatabase, getSettings, saveSettings, resolveDbPath, DEFAULT_SETTINGS };
