@@ -165,3 +165,28 @@ test('the overhead calculator sends its own template (8 variables) to the sales 
     await new Promise((r) => setTimeout(r, 200));
     assert.strictEqual(fake.calls.length, before);
 });
+
+test('the MazBot webhook records what it receives, only with the right secret', async (t) => {
+    process.env.MAZBOT_WEBHOOK_SECRET = 'abcdefghijklmnop1234';
+    t.after(() => { delete process.env.MAZBOT_WEBHOOK_SECRET; });
+    const app = await startApp();
+    t.after(() => app.server.close());
+    const hook = app.base + '/webhooks/mazbot/abcdefghijklmnop1234';
+
+    assert.strictEqual((await fetch(app.base + '/webhooks/mazbot/wrong-secret-000000', { method: 'POST', body: '{}' })).status, 404);
+    const json = await fetch(hook, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: '96899123456', message: 'مرحبا' }) });
+    assert.strictEqual(json.status, 200);
+    await fetch(hook, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'phone=968&message=hi' });
+
+    const r = await (await fetch(app.base + '/api/admin/mazbot/inbound', { headers: { Authorization: 'Bearer test-token' } })).json();
+    assert.strictEqual(r.webhook_path, '/webhooks/mazbot/abcdefghijklmnop1234');
+    assert.strictEqual(r.events.length, 2);
+    assert.strictEqual(r.events[0].body, 'phone=968&message=hi');
+    assert.deepStrictEqual(JSON.parse(r.events[1].body), { phone: '96899123456', message: 'مرحبا' });
+    assert.strictEqual((await fetch(app.base + '/api/admin/mazbot/inbound')).status, 401);
+
+    // No secret configured → the webhook does not exist
+    delete process.env.MAZBOT_WEBHOOK_SECRET;
+    assert.strictEqual((await fetch(hook, { method: 'POST', body: '{}' })).status, 404);
+});

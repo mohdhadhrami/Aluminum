@@ -1370,6 +1370,14 @@
                     <div class="form-group" style="grid-column: 1 / -1;"><label>أرقام الاستقبال <span class="unit">(مفصولة بفاصلة — 8 أرقام أو بالصيغة الدولية)</span></label><input type="text" id="mazbotRecipients" placeholder="76979066, 90660001"></div>
                 </div>
                 <p class="status-text">كل رقم جديد يجب أن يراسل رقم واتساب العمل مرة واحدة أولاً ليستقبل القوالب.</p>
+                <p class="sub-heading">رابط Webhook لرسائل العملاء (للمساعد الذكي)</p>
+                <div class="filter-row">
+                    <input type="text" id="mazbotWebhookUrl" readonly dir="ltr" style="flex:1; min-width:260px; padding: 8px 12px; border: 2px solid var(--border); border-radius: 8px; font-family: monospace;">
+                    <button class="btn btn-outline btn-sm" onclick="copyWebhookUrl()">نسخ</button>
+                    <button class="btn btn-outline btn-sm" onclick="loadInbound()">تحديث</button>
+                </div>
+                <p class="status-text">الصق هذا الرابط في إعدادات Webhook في MazBot، ثم أرسل رسالة واتساب إلى رقم العمل. ستظهر الرسالة كما وصلت هنا، ومنها نبني ربط المساعد الذكي.</p>
+                <div id="inboundList" style="margin-top:8px"></div>
                 <div class="db-actions">
                     <button class="btn btn-accent" onclick="saveSettingsToServer()">حفظ</button>
                     <button class="btn btn-outline" onclick="testMazbot('rolling_shutter')">رسالة تجريبية — رولينج شتر</button>
