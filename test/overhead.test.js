@@ -77,6 +77,14 @@ test('overhead quote is saved with its price range and opens as a PDF', async (t
     assert.strictEqual(res.body.details.range.total_to, 567);
     assert.strictEqual(res.body.details.calculator, 'overhead');
 
+    // Pressing "احتساب السعر" again with the same data: same request, no duplicate
+    const again = await call('POST', '/api/public/overhead-quotes', {
+        gate_type: 'Type B', width_cm: 440, height_cm: 250, motor_id: conf.motors[2].id, region_id: wilayah(conf, 'عبري').id,
+        customer_name: 'عميل', customer_phone: '91234567'
+    }, '');
+    assert.strictEqual(again.status, 200);
+    assert.strictEqual(again.body.ref, res.body.ref);
+
     const pdf = await fetch(base + res.body.pdf_url);
     assert.strictEqual(pdf.status, 200);
     assert.strictEqual(pdf.headers.get('content-type'), 'application/pdf');
@@ -107,9 +115,6 @@ test('admin edits overhead sizes, motors and the installation fee per wilayah', 
     const { body: shutter } = await call('GET', '/api/public/configurator', null, '');
     assert.ok(shutter.locations.flatMap((g) => g.wilayat).some((w) => w.name === 'نزوى'));
 
-    // Import puts the site data back
-    await call('POST', '/api/admin/import/radma-overhead');
-    const { body: again } = await call('GET', '/api/admin/overhead');
-    assert.strictEqual(again.regions.find((r) => r.name === 'نزوى').overhead_installation_fee, 80);
-    assert.strictEqual(again.sizes.find((s) => s.gate_type === 'Type B' && s.width_cm === 370).price_from, 270);
+    // The old "import site prices" action does not exist (it would overwrite the admin's prices)
+    assert.strictEqual((await call('POST', '/api/admin/import/radma-overhead')).status, 404);
 });

@@ -901,6 +901,9 @@ async function restoreSaved(name) {
         await afterRestore(await res.json());
     } catch (err) {
         setStatus('backupStatus', err.message, 'err');
+    }
+}
+
 /* --------------------------- Overhead gates ------------------------ */
 
 let overheadData = { sizes: [], motors: [], regions: [] };
@@ -956,17 +959,6 @@ async function saveOverhead() {
     }
 }
 
-async function importRadmaOverhead() {
-    if (!confirm('سيتم استبدال مقاسات وأسعار ومحركات الأوفرهيد، وأسعار تركيب الأوفرهيد لكل ولاية، بأسعار حاسبة الموقع. متابعة؟')) return;
-    try {
-        await api('POST', '/api/admin/import/radma-overhead');
-        setStatus('ohImportStatus', 'تم الاستيراد ✓', 'ok');
-        await loadOverhead();
-    } catch (err) {
-        setStatus('ohImportStatus', err.message, 'err');
-    }
-}
-
 function renderOhRegions() {
     const gov = $id('ohGovFilter').value;
     $id('ohRegionsBody').innerHTML = overheadData.regions
@@ -1014,14 +1006,17 @@ async function loadAgentStatus() {
 
 async function loadMazbotStatus() {
     const s = await api('GET', '/api/admin/mazbot/status');
-    $id('mazbotStatus').textContent = s.configured ? (s.dry_run ? 'وضع تجريبي (لا يرسل)' : 'مفعّل') : 'غير مفعّل — أضف بيانات MazBot في متغيرات البيئة';
+    const label = (on) => (on ? (s.dry_run ? 'وضع تجريبي (لا يرسل)' : 'مفعّل') : 'غير مفعّل');
+    $id('mazbotStatus').textContent = 'الرولينج شتر: ' + label(s.configured);
     $id('mazbotStatus').className = 'badge' + (s.configured ? ' on' : '');
+    $id('mazbotOverheadStatus').textContent = 'الأوفرهيد: ' + label(s.overhead_configured);
+    $id('mazbotOverheadStatus').className = 'badge' + (s.overhead_configured ? ' on' : '');
 }
 
-async function testMazbot() {
+async function testMazbot(calculator) {
     setStatus('mazbotTestStatus', 'جاري الإرسال...');
     try {
-        const r = await api('POST', '/api/admin/mazbot/test');
+        const r = await api('POST', '/api/admin/mazbot/test?calculator=' + calculator);
         const failed = r.results.filter((x) => !x.ok);
         setStatus('mazbotTestStatus', `تم الإرسال إلى ${r.sent} من ${r.total}` +
             (failed.length ? ' — فشل: ' + failed.map((x) => `${x.mobile} (${x.error})`).join('، ') : ' ✓'), failed.length ? 'err' : 'ok');

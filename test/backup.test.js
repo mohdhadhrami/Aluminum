@@ -91,3 +91,19 @@ test('a wrong file is refused and nothing changes', async (t) => {
     assert.match((await res.json()).error, /أوراق ناقصة/);
     assert.deepStrictEqual(typeNames(db), types);
 });
+
+test('an older backup without the overhead sheets still restores and keeps the overhead prices', async (t) => {
+    const { db, server, call } = await start();
+    t.after(() => server.close());
+    const file = Buffer.from(await (await call('GET', '/api/admin/backup.xlsx')).arrayBuffer());
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(file);
+    wb.removeWorksheet(wb.getWorksheet('مقاسات الأوفرهيد').id);
+    wb.removeWorksheet(wb.getWorksheet('محركات الأوفرهيد').id);
+    const old = Buffer.from(await wb.xlsx.writeBuffer());
+    const sizes = db.prepare('SELECT COUNT(*) AS n FROM overhead_sizes').get().n;
+    const res = await call('POST', '/api/admin/restore', old, { 'Content-Type': 'application/octet-stream', 'X-Confirm-Restore': 'yes' });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(db.prepare('SELECT COUNT(*) AS n FROM overhead_sizes').get().n, sizes);
+    assert.ok(sizes > 0);
+});

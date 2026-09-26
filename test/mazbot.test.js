@@ -38,7 +38,8 @@ async function fakeMazbot({ expireFirstToken = false } = {}) {
     await new Promise((r) => server.listen(0, r));
     Object.assign(process.env, {
         MAZBOT_BASE_URL: `http://127.0.0.1:${server.address().port}/api`,
-        MAZBOT_API_KEY: 'key-1', MAZBOT_STAFF_EMAIL: 'staff@example.com', MAZBOT_STAFF_PASSWORD: 'pw', MAZBOT_TEMPLATE_ID: '42'
+        MAZBOT_API_KEY: 'key-1', MAZBOT_STAFF_EMAIL: 'staff@example.com', MAZBOT_STAFF_PASSWORD: 'pw', MAZBOT_TEMPLATE_ID: '42',
+        MAZBOT_OVERHEAD_TEMPLATE_ID: '43'
     });
     mazbot._reset();
     return { server, calls };
@@ -123,10 +124,44 @@ test('an expired token logs in again once; admin test message and status', async
     t.after(() => { fake.server.close(); app.server.close(); });
 
     const status = await (await fetch(app.base + '/api/admin/mazbot/status', { headers: { Authorization: 'Bearer test-token' } })).json();
-    assert.deepStrictEqual(status, { configured: true, dry_run: false, recipients: ['96876979066', '96890660001'] });
+    assert.deepStrictEqual(status, { configured: true, overhead_configured: true, dry_run: false, recipients: ['96876979066', '96890660001'] });
 
     const r = await (await app.post('/api/admin/mazbot/test', {}, 'test-token')).json();
     assert.strictEqual(r.sent, 2);
     assert.strictEqual(fake.calls.filter((c) => c.path === '/api/login').length, 2);
     assert.strictEqual((await app.post('/api/admin/mazbot/test', {})).status, 401);
+});
+
+test('the overhead calculator sends its own template (8 variables) to the sales numbers', async (t) => {
+    const fake = await fakeMazbot();
+    const app = await startApp();
+    t.after(() => { fake.server.close(); app.server.close(); });
+    const conf = await (await fetch(app.base + '/api/public/overhead')).json();
+    const nizwa = conf.locations.flatMap((g) => g.wilayat).find((w) => w.name === 'نزوى');
+    const motor = conf.motors.find((m) => m.name === 'المكينة الإيطالية 1200N');
+    const res = await app.post('/api/public/overhead-quotes', {
+        gate_type: 'Type A', width_cm: 415, height_cm: 250, motor_id: motor.id, region_id: nizwa.id,
+        customer_name: 'سالم', customer_phone: '99887766'
+    });
+    assert.strictEqual(res.status, 201);
+    const quote = await res.json();
+    await waitFor(() => fake.calls.filter((c) => c.form).length === 2);
+    const f = fake.calls.find((c) => c.form).form;
+    assert.strictEqual(f.template_id, '43');
+    assert.deepStrictEqual([1, 2, 3, 4, 5, 6, 7, 8].map((i) => f[`body_values[${i}]`]), [
+        quote.ref, 'سالم', '96899887766', 'الداخلية - نزوى', 'أوفرهيد Type A', 'العرض 415 سم × الارتفاع 250 سم',
+        'المكينة الإيطالية 1200N', '609.000 - 630.000 ريال عماني شامل الضريبة'
+    ]);
+    assert.ok(!('body_values[9]' in f));
+
+    // Without an overhead template the shutter template is never used by mistake
+    delete process.env.MAZBOT_OVERHEAD_TEMPLATE_ID;
+    t.after(() => { process.env.MAZBOT_OVERHEAD_TEMPLATE_ID = '43'; });
+    const before = fake.calls.length;
+    await app.post('/api/public/overhead-quotes', {
+        gate_type: 'Type A', width_cm: 455, height_cm: 250, motor_id: motor.id, region_id: nizwa.id,
+        customer_name: 'سالم', customer_phone: '99887766'
+    });
+    await new Promise((r) => setTimeout(r, 200));
+    assert.strictEqual(fake.calls.length, before);
 });

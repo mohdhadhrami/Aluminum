@@ -13,15 +13,21 @@ const env = () => ({
     apiKey: process.env.MAZBOT_API_KEY || '',
     email: process.env.MAZBOT_STAFF_EMAIL || '',
     password: process.env.MAZBOT_STAFF_PASSWORD || '',
-    templateId: process.env.MAZBOT_TEMPLATE_ID || '',
+    templateId: process.env.MAZBOT_TEMPLATE_ID || '',                  // rolling-shutter template
+    overheadTemplateId: process.env.MAZBOT_OVERHEAD_TEMPLATE_ID || '', // overhead-gate template
     baseUrl: (process.env.MAZBOT_BASE_URL || 'https://mazbot.net/api').replace(/\/$/, ''),
     dryRun: process.env.MAZBOT_DRY_RUN === '1'
 });
 
-const isConfigured = () => {
+const hasLogin = () => {
     const e = env();
-    return Boolean(e.apiKey && e.email && e.password && e.templateId);
+    return Boolean(e.apiKey && e.email && e.password);
 };
+
+/* Template of each calculator ('' = not set) */
+const templateFor = (calculator) => (calculator === 'overhead' ? env().overheadTemplateId : env().templateId);
+
+const isConfigured = (calculator = 'rolling_shutter') => hasLogin() && Boolean(templateFor(calculator));
 
 let tokenCache = { token: null, expiresAt: 0 };
 const TOKEN_TTL_MS = 45 * 60_000;
@@ -67,27 +73,27 @@ async function getToken(force = false) {
 /* WhatsApp rejects template values with new lines, tabs or more than 4 spaces in a row */
 const cleanValue = (v) => String(v ?? '—').replace(/[\r\n\t]+/g, ' / ').replace(/ {4,}/g, '   ').trim().slice(0, 1000) || '—';
 
-async function sendTemplateOnce(jwt, mobile, values) {
+async function sendTemplateOnce(jwt, mobile, values, templateId) {
     const bodyValues = {};
     const bodyMatchs = {};
     values.forEach((v, i) => { bodyValues[i + 1] = cleanValue(v); bodyMatchs[i + 1] = 'input_value'; });
     const res = await post('/whatsapp/send-template', {
-        template_id: env().templateId, mobile, body_matchs: bodyMatchs, body_values: bodyValues
+        template_id: templateId, mobile, body_matchs: bodyMatchs, body_values: bodyValues
     }, { jwt, multipart: true });
     const ok = res.status === 200 && Boolean(res.body && res.body.success);
     return { ok, status: res.status, error: ok ? null : res.error || `template_failed_http_${res.status} ${JSON.stringify(res.body)}` };
 }
 
 /* Send to one mobile: one new login after a 401 (JWT expired), one retry on a network/5xx error */
-async function sendTemplate(mobile, values) {
+async function sendTemplate(mobile, values, templateId) {
     if (env().dryRun) return { ok: true, status: 200, error: 'dry_run' };
     let jwt;
     try { jwt = await getToken(); } catch (err) { return { ok: false, status: 0, error: err.message }; }
-    let result = await sendTemplateOnce(jwt, mobile, values);
+    let result = await sendTemplateOnce(jwt, mobile, values, templateId);
     if (!result.ok && result.status === 401) {
-        try { jwt = await getToken(true); result = await sendTemplateOnce(jwt, mobile, values); } catch (err) { result = { ok: false, status: 0, error: err.message }; }
+        try { jwt = await getToken(true); result = await sendTemplateOnce(jwt, mobile, values, templateId); } catch (err) { result = { ok: false, status: 0, error: err.message }; }
     }
-    if (!result.ok && (result.status === 0 || result.status >= 500)) result = await sendTemplateOnce(jwt, mobile, values);
+    if (!result.ok && (result.status === 0 || result.status >= 500)) result = await sendTemplateOnce(jwt, mobile, values, templateId);
     return result;
 }
 
@@ -98,10 +104,11 @@ function parseRecipients(text) {
 }
 
 /* Each recipient is sent independently; returns a short status for the quote ("2/2 ✓") */
-async function sendToAll(recipients, values) {
+async function sendToAll(recipients, values, calculator = 'rolling_shutter') {
+    const templateId = templateFor(calculator);
     const results = [];
     for (const mobile of recipients) {
-        const r = await sendTemplate(mobile, values);
+        const r = await sendTemplate(mobile, values, templateId);
         results.push({ mobile, ...r });
         if (!r.ok) console.error('[mazbot]', mobile, r.error);
     }
@@ -109,4 +116,4 @@ async function sendToAll(recipients, values) {
     return { sent, total: results.length, results };
 }
 
-module.exports = { isConfigured, sendToAll, parseRecipients, cleanValue, _reset: () => { tokenCache = { token: null, expiresAt: 0 }; } };
+module.exports = { isConfigured, hasLogin, templateFor, sendToAll, parseRecipients, cleanValue, _reset: () => { tokenCache = { token: null, expiresAt: 0 }; } };

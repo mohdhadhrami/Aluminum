@@ -1225,8 +1225,6 @@
                 <div class="range-box" style="margin-bottom: 16px;">
                     السعر للعميل = سعر المقاس (من – إلى حسب اللون) + المحرك + تركيب الولاية، ثم تُضاف ضريبة القيمة المضافة.
                     الأسعار قبل الضريبة. صفحة العميل: <a href="/overhead" target="_blank" rel="noopener">/overhead</a>
-                    <button class="btn btn-outline btn-sm" style="margin-inline-start: 10px;" onclick="importRadmaOverhead()">استيراد أسعار ردما</button>
-                    <span id="ohImportStatus" class="status-text"></span>
                 </div>
                 <p class="sub-heading">المقاسات القياسية <span class="status-text">— يختار العميل المقاس الأقرب والأكبر من مقاسه الفعلي. إذا كان للنوع ارتفاع واحد فلن يُسأل العميل عنه.</span></p>
                 <div class="table-wrapper"><table>
@@ -1364,17 +1362,18 @@
             <div class="card">
                 <div class="card-title">
                     <span class="icon">M</span>
-                    واتساب المبيعات عبر MazBot <span class="badge" id="mazbotStatus" style="margin-inline-start:10px"></span>
+                    واتساب المبيعات عبر MazBot <span class="badge" id="mazbotStatus" style="margin-inline-start:10px"></span> <span class="badge" id="mazbotOverheadStatus" style="margin-inline-start:6px"></span>
                 </div>
                 <p class="status-text" style="margin-top:0">عند ضغط العميل «احتساب السعر» يُرسل قالب واتساب بكل بيانات الطلب إلى هذه الأرقام (رقم الطلب، الاسم، الجوال، الموقع، النوع، المقاس، المسارات، عمود المحور، القواعد، المحرك، السعر).
-                    بيانات الدخول (MAZBOT_API_KEY و MAZBOT_STAFF_EMAIL و MAZBOT_STAFF_PASSWORD و MAZBOT_TEMPLATE_ID) تُضبط في متغيرات البيئة على الخادم فقط.</p>
+                    بيانات الدخول (MAZBOT_API_KEY و MAZBOT_STAFF_EMAIL و MAZBOT_STAFF_PASSWORD) ورقم قالب كل حاسبة (MAZBOT_TEMPLATE_ID للرولينج شتر و MAZBOT_OVERHEAD_TEMPLATE_ID للأوفرهيد) تُضبط في متغيرات البيئة على الخادم فقط.</p>
                 <div class="form-grid">
                     <div class="form-group" style="grid-column: 1 / -1;"><label>أرقام الاستقبال <span class="unit">(مفصولة بفاصلة — 8 أرقام أو بالصيغة الدولية)</span></label><input type="text" id="mazbotRecipients" placeholder="76979066, 90660001"></div>
                 </div>
                 <p class="status-text">كل رقم جديد يجب أن يراسل رقم واتساب العمل مرة واحدة أولاً ليستقبل القوالب.</p>
                 <div class="db-actions">
                     <button class="btn btn-accent" onclick="saveSettingsToServer()">حفظ</button>
-                    <button class="btn btn-outline" onclick="testMazbot()">إرسال رسالة تجريبية</button>
+                    <button class="btn btn-outline" onclick="testMazbot('rolling_shutter')">رسالة تجريبية — رولينج شتر</button>
+                    <button class="btn btn-outline" onclick="testMazbot('overhead')">رسالة تجريبية — أوفرهيد</button>
                     <span id="mazbotTestStatus" class="status-text"></span>
                 </div>
             </div>

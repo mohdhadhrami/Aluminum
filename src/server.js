@@ -84,7 +84,7 @@ function makeRequireAdmin() {
 }
 
 /* Sites allowed to embed the customer calculator in an <iframe> (space separated) */
-const embedOrigins = () => (process.env.EMBED_ALLOWED_ORIGINS ?? 'https://radma.co https://www.radma.co').trim();
+const embedOrigins = () => (process.env.EMBED_ALLOWED_ORIGINS ?? 'https://radma.co https://www.radma.co https://calcoverhead.radma.co').trim();
 
 /* Validate and normalise a product payload (partial when updating) */
 function parseProduct(body, partial = false) {
@@ -197,12 +197,32 @@ function templateValues(quote) {
     ];
 }
 
+/* The 8 values of the overhead MazBot template:
+   request no., name, mobile, location, gate type, size, motor, price range */
+function overheadTemplateValues(quote) {
+    const d = quote.details || {};
+    const range = d.range || {};
+    return [
+        quote.ref,
+        quote.customer_name,
+        quote.customer_phone,
+        [d.governorate, d.region].filter(Boolean).join(' - ') || quote.customer_city,
+        `أوفرهيد ${d.gate_type}`,
+        `العرض ${d.width_cm} سم × الارتفاع ${d.height_cm} سم`,
+        d.motor || '—',
+        `${Number(quote.total).toFixed(3)} - ${Number(range.total_to ?? quote.total).toFixed(3)} ريال عماني شامل الضريبة`
+    ];
+}
+
 /* WhatsApp template to the sales numbers (MazBot); the outcome is kept on the quote */
 async function notifySales(db, quote) {
-    if (!mazbot.isConfigured() || !quote.details || !quote.details.width_cm) return null; // calculator requests only
+    if (!quote.details || !quote.details.width_cm) return null; // calculator requests only
+    const calculator = quote.details.calculator === 'overhead' ? 'overhead' : 'rolling_shutter';
+    if (!mazbot.isConfigured(calculator)) return null;
     const recipients = mazbot.parseRecipients(getSettings(db).mazbot_recipients);
     if (!recipients.length) return null;
-    const { sent, total, results } = await mazbot.sendToAll(recipients, templateValues(quote));
+    const values = calculator === 'overhead' ? overheadTemplateValues(quote) : templateValues(quote);
+    const { sent, total, results } = await mazbot.sendToAll(recipients, values, calculator);
     const status = sent === total ? `تم الإرسال ${sent}/${total}` : `فشل ${total - sent}/${total}: ${results.find((r) => !r.ok).error}`.slice(0, 300);
     db.prepare('UPDATE quotes SET notify_status = ? WHERE id = ?').run(status, quote.id);
     return status;
@@ -343,11 +363,7 @@ function createApp(db) {
     /* "احتساب السعر" on the customer page: prices on the server, saves the quote and sends it to the
        sales numbers on WhatsApp. Pressing it again with the same data returns the same quote
        (no duplicate message); any change is a new request. */
-    app.post('/api/public/door-quotes', quoteLimit, (req, res) => {
-        const body = req.body || {};
-        const customer = readCustomer(body);
-        const priced = doors.finalPrice(db, { ...readDoor(body), regionId: customer.region.id });
-        const details = { ...priced.door, spec: priced.spec, fees_note: priced.delivery_installation };
+    const saveOrRepeat = (res, customer, priced, details) => {
         const same = db.prepare(`SELECT * FROM quotes WHERE customer_phone = ? AND customer_name = ? AND details_json = ?
                                  AND total = ? AND IFNULL(notes, '') = ? AND created_at >= datetime('now', '-30 minutes')
                                  ORDER BY id DESC LIMIT 1`)
@@ -358,6 +374,13 @@ function createApp(db) {
             return quoteResponse(res, { ...quote, pdf_url: pdfPath(quote) }, { repeat: true });
         }
         quoteResponse(res, saveQuote(db, { ...customer, source: 'web', priced, details }));
+    };
+
+    app.post('/api/public/door-quotes', quoteLimit, (req, res) => {
+        const body = req.body || {};
+        const customer = readCustomer(body);
+        const priced = doors.finalPrice(db, { ...readDoor(body), regionId: customer.region.id });
+        saveOrRepeat(res, customer, priced, { ...priced.door, spec: priced.spec, fees_note: priced.delivery_installation });
     });
 
     /* ---- Overhead (sectional) gate calculator: same method and data as the company site's ---- */
@@ -380,10 +403,10 @@ function createApp(db) {
         const body = req.body || {};
         const customer = readCustomer(body);
         const priced = overhead.overheadPrice(db, { ...readOverhead(body), regionId: customer.region.id });
-        quoteResponse(res, saveQuote(db, {
-            ...customer, source: 'web', priced,
-            details: { calculator: 'overhead', ...priced.gate, spec: priced.spec, fees_note: priced.delivery_installation, range: priced.range }
-        }));
+        saveOrRepeat(res, customer, priced, {
+            calculator: 'overhead', ...priced.gate, governorate: priced.region.governorate,
+            spec: priced.spec, fees_note: priced.delivery_installation, range: priced.range
+        });
     });
 
     /* Customer-facing PDF: the random key in the link is the access control */
@@ -696,12 +719,6 @@ function createApp(db) {
         });
     });
 
-    /* Replace shutter types and installation fees with the company site's catalog */
-    admin.post('/import/radma-catalog', (req, res) => {
-        require('./radma-catalog').applyRadmaCatalog(db);
-        res.json({ ok: true, shutter_types: db.prepare('SELECT COUNT(*) AS n FROM shutter_types').get().n });
-    });
-
     /* ---- Overhead gates: sizes with their price range, motors, installation fee per wilayah ---- */
 
     admin.get('/overhead', (req, res) => {
@@ -751,12 +768,6 @@ function createApp(db) {
         });
         const { sizes: savedSizes, motors: savedMotors } = overhead.loadOverhead(db, { includeInactive: true });
         res.json({ sizes: savedSizes, motors: savedMotors });
-    });
-
-    /* Replace overhead sizes, motors and installation fees with the company site's overhead calculator */
-    admin.post('/import/radma-overhead', (req, res) => {
-        require('./radma-catalog').applyOverheadCatalog(db);
-        res.json({ ok: true, sizes: db.prepare('SELECT COUNT(*) AS n FROM overhead_sizes').get().n });
     });
 
     admin.get('/governorates', (req, res) => res.json(db.prepare('SELECT * FROM governorates ORDER BY sort_order, name').all()));
@@ -844,18 +855,23 @@ function createApp(db) {
 
     admin.get('/mazbot/status', (req, res) => res.json({
         configured: mazbot.isConfigured(),
+        overhead_configured: mazbot.isConfigured('overhead'),
         dry_run: process.env.MAZBOT_DRY_RUN === '1',
         recipients: mazbot.parseRecipients(getSettings(db).mazbot_recipients)
     }));
 
+    /* Test message with sample values: ?calculator=overhead tests the overhead template */
     admin.post('/mazbot/test', asyncRoute(async (req, res) => {
-        if (!mazbot.isConfigured()) throw httpError(503, 'بيانات MazBot غير مضبوطة على الخادم');
+        const calculator = req.query.calculator === 'overhead' ? 'overhead' : 'rolling_shutter';
+        if (!mazbot.isConfigured(calculator)) throw httpError(503, 'بيانات MazBot أو رقم القالب غير مضبوط على الخادم');
         const recipients = mazbot.parseRecipients(getSettings(db).mazbot_recipients);
         if (!recipients.length) throw httpError(400, 'أضف أرقام الاستقبال أولاً');
-        const { sent, total, results } = await mazbot.sendToAll(recipients, [
-            'TEST', 'رسالة تجريبية', '96890000000', 'الداخلية - نزوى', 'رولينج شتر - الإيراني - Grade C - أبيض',
-            'العرض 300 سم × الارتفاع 250 سم', 'Class A', 'Class A', 'Class A', 'Class A', '0.000 ريال عماني شامل الضريبة'
-        ]);
+        const values = calculator === 'overhead'
+            ? ['TEST', 'رسالة تجريبية', '96890000000', 'الداخلية - نزوى', 'أوفرهيد Type A', 'العرض 415 سم × الارتفاع 250 سم',
+                'المكينة الإيطالية 1200N', '0.000 - 0.000 ريال عماني شامل الضريبة']
+            : ['TEST', 'رسالة تجريبية', '96890000000', 'الداخلية - نزوى', 'رولينج شتر - الإيراني - Grade C - أبيض',
+                'العرض 300 سم × الارتفاع 250 سم', 'Class A', 'Class A', 'Class A', 'Class A', '0.000 ريال عماني شامل الضريبة'];
+        const { sent, total, results } = await mazbot.sendToAll(recipients, values, calculator);
         res.json({ sent, total, results: results.map(({ mobile, ok, error }) => ({ mobile, ok, error })) });
     }));
 
