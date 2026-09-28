@@ -267,8 +267,8 @@ npm start
 | في | الإجراء |
 |---|---|
 | متغيرات البيئة | `MAZBOT_WEBHOOK_SECRET`: نص عشوائي من 16 حرفاً أو أكثر، وهو جزء من الرابط |
-| متغيرات البيئة | `MAZBOT_SIGNING_SECRET`: قيمة «Webhook signing secret» من صفحة Webhook في MazBot، للتحقق من ترويسة `X-Mazbot-Signature` |
-| متغيرات البيئة | `ANTHROPIC_API_KEY`: مفتاح Claude API للمساعد |
+| متغيرات البيئة | `MAZBOT_SIGNING_SECRET` (اختياري، موصى به): قيمة «Webhook signing secret» من صفحة Webhook في MazBot، للتحقق من ترويسة `X-Mazbot-Signature`. بدونه يبقى الرابط السري هو الحماية |
+| متغيرات البيئة | `OPENAI_API_KEY`: مفتاح OpenAI للمساعد. `OPENAI_MODEL` اختياري، والافتراضي `gpt-4.1-mini`. يمكن بدلاً منه استخدام `ANTHROPIC_API_KEY` (Claude)، ويحدد `AI_PROVIDER` أيهما يُستخدم إذا أُضيف المفتاحان |
 | MazBot | الصق الرابط من تبويب «الربط» في «Whatsapp External Webhook Url»، واشترك في Message received و Interactive selection |
 | لوحة الإدارة | في تبويب «الربط» فعّل «المساعد الذكي يرد على رسائل العملاء»، ثم اضغط «حفظ» |
 

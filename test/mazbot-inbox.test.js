@@ -178,3 +178,48 @@ test('the webhook checks X-Mazbot-Signature when the signing secret is set', asy
     const ts = '1700000000';
     assert.ok(mazbot.verifySignature(body, `t=${ts},v1=${crypto.createHmac('sha256', 'sign-secret').update(ts + '.' + body).digest('hex')}`, 'sign-secret'));
 });
+
+test('with OPENAI_API_KEY the agent runs on OpenAI (same tools and prices) and replies through MazBot', async (t) => {
+    const fake = await fakeMazbot();
+    const saved = { a: process.env.ANTHROPIC_API_KEY, o: process.env.OPENAI_API_KEY };
+    delete process.env.ANTHROPIC_API_KEY;
+    process.env.OPENAI_API_KEY = 'sk-test';
+    t.after(() => {
+        fake.server.close();
+        delete process.env.OPENAI_API_KEY;
+        if (saved.a) process.env.ANTHROPIC_API_KEY = saved.a;
+    });
+    const agent = require('../src/agent');
+    assert.strictEqual(agent.provider(), 'openai');
+    assert.ok(agent.isConfigured());
+
+    const { db, ctx } = setup();
+    const { motors } = overhead.loadOverhead(db);
+    const nizwa = db.prepare("SELECT id FROM regions WHERE name = 'نزوى'").get().id;
+    const requests = [];
+    const client = { chat: { completions: { create: async (params) => {
+        requests.push(structuredClone(params));
+        if (requests.length === 1) {
+            return { choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: null, tool_calls: [{
+                id: 'call_1', type: 'function',
+                function: { name: 'calculate_overhead_price', arguments: JSON.stringify({ gate_type: 'Type A', width_cm: 415, height_cm: 250, motor_id: motors[0].id, region_id: nizwa }) }
+            }] } }] };
+        }
+        return { choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'السعر من 609 إلى 630 ر.ع' } }] };
+    } } } };
+
+    const event = incoming('كم سعر الأوفرهيد؟');
+    const id = store(db, event);
+    await inbox.handleEvent(db, id, event, ctx(client));
+
+    assert.strictEqual(statusOf(db, id), 'replied');
+    assert.strictEqual(fake.sent.at(-1).message, 'السعر من 609 إلى 630 ر.ع');
+    // The system prompt and every tool are sent in OpenAI's format
+    assert.strictEqual(requests[0].messages[0].role, 'system');
+    assert.ok(requests[0].tools.every((x) => x.type === 'function' && x.function.strict === true));
+    assert.ok(requests[0].tools.some((x) => x.function.name === 'create_overhead_quote'));
+    const toolMsg = requests[1].messages.find((m) => m.role === 'tool');
+    assert.strictEqual(JSON.parse(toolMsg.content).total_with_vat_to, 630);
+    // History is stored per provider
+    assert.ok(db.prepare("SELECT 1 FROM agent_conversations WHERE conversation_key = 'oa:mz:96899887897'").get());
+});

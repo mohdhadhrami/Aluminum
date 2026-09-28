@@ -65,7 +65,7 @@ function handleEvent(db, eventId, event, ctx) {
 
     const settings = getSettings(db);
     if (!settings.mazbot_agent_enabled) { setStatus(db, eventId, 'agent_off'); return null; }
-    if (!agent.isConfigured()) { setStatus(db, eventId, 'agent_not_configured (ANTHROPIC_API_KEY)'); return null; }
+    if (!agent.isConfigured()) { setStatus(db, eventId, 'agent_not_configured (OPENAI_API_KEY / ANTHROPIC_API_KEY)'); return null; }
 
     setStatus(db, eventId, 'queued');
     return enqueue(phone, () => reply(db, eventId, event, { ...ctx, phone, contact }));

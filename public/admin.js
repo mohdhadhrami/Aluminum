@@ -1001,9 +1001,9 @@ function bubble(kind, content) {
 
 async function loadAgentStatus() {
     const s = await api('GET', '/api/admin/agent/status');
-    $id('agentStatus').textContent = s.configured ? 'مفعّل' : 'غير مفعّل — أضف ANTHROPIC_API_KEY في ملف .env';
+    $id('agentStatus').textContent = s.configured ? 'مفعّل' : 'غير مفعّل — أضف OPENAI_API_KEY (أو ANTHROPIC_API_KEY) في متغيرات البيئة';
     $id('agentStatus').className = 'badge' + (s.configured ? ' on' : '');
-    $id('agentModel').textContent = s.configured ? 'النموذج: ' + s.model : '';
+    $id('agentModel').textContent = s.configured ? `${s.provider === 'openai' ? 'OpenAI' : 'Claude'} — النموذج: ${s.model}` : '';
 }
 
 async function loadMazbotStatus() {

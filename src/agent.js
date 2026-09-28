@@ -8,13 +8,22 @@ const { getSettings } = require('./db');
 const doors = require('./doors');
 const overhead = require('./overhead');
 
+/* Which AI runs the agent: AI_PROVIDER=openai|anthropic, or whichever API key is set */
+const hasAnthropicKey = () => Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+const provider = () => {
+    const p = String(process.env.AI_PROVIDER || '').toLowerCase();
+    if (p === 'openai' || p === 'anthropic') return p;
+    return process.env.OPENAI_API_KEY && !hasAnthropicKey() ? 'openai' : 'anthropic';
+};
 const MODEL = () => process.env.AGENT_MODEL || 'claude-opus-5';
+const OPENAI_MODEL = () => process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+const modelName = () => (provider() === 'openai' ? OPENAI_MODEL() : MODEL());
 const EFFORT = () => process.env.AGENT_EFFORT || 'medium';
 const MAX_TOOL_ROUNDS = 8;
 const CONVERSATION_TTL_HOURS = 24;
 const MAX_STORED_MESSAGES = 80;
 
-const isConfigured = () => Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+const isConfigured = () => (provider() === 'openai' ? Boolean(process.env.OPENAI_API_KEY) : hasAnthropicKey());
 
 function systemPrompt(settings) {
     return `أنت مساعد المبيعات في ${settings.company_name} في سلطنة عُمان، وتتحدث مع العملاء عبر واتساب.
@@ -319,8 +328,11 @@ function saveConversation(db, key, channel, messages) {
         .run(key, channel, JSON.stringify(toStore));
 }
 
+/* Each AI keeps its own history format, so the stored conversation is per provider */
+const storeKey = (key) => (provider() === 'openai' ? 'oa:' + key : key);
+
 function resetConversation(db, key) {
-    db.prepare('DELETE FROM agent_conversations WHERE conversation_key = ?').run(key);
+    db.prepare('DELETE FROM agent_conversations WHERE conversation_key IN (?, ?)').run(key, 'oa:' + key);
 }
 
 /* ------------------------------ Agent loop ----------------------------- */
@@ -332,12 +344,18 @@ const defaultClient = () => (sharedClient ||= new Anthropic());
  * Handle one customer message and return the agent's reply.
  * @param opts { db, key, channel, phone, text, createQuote, notifyHuman, client? }
  */
-async function chat({ db, key, channel, phone, text, createQuote, notifyHuman, client = defaultClient() }) {
+async function chat({ db, key, channel, phone, text, createQuote, notifyHuman, client }) {
     if (/^\s*(جديد|ابدأ من جديد|reset|restart)\s*$/i.test(text)) {
         resetConversation(db, key);
         return { reply: 'تم بدء محادثة جديدة 👋 كيف أقدر أساعدك؟', events: [] };
     }
+    const args = { db, key: storeKey(key), channel, phone, text, createQuote, notifyHuman };
+    return provider() === 'openai'
+        ? chatOpenAI({ ...args, client: client || defaultOpenAIClient() })
+        : chatAnthropic({ ...args, client: client || defaultClient() });
+}
 
+async function chatAnthropic({ db, key, channel, phone, text, createQuote, notifyHuman, client }) {
     const settings = getSettings(db);
     const messages = loadConversation(db, key);
     const startLength = messages.length;
@@ -395,4 +413,81 @@ async function chat({ db, key, channel, phone, text, createQuote, notifyHuman, c
     return { reply: reply || '…', events: ctx.events };
 }
 
-module.exports = { chat, executeTool, TOOLS, isConfigured, resetConversation, systemPrompt };
+/* ------------------------- OpenAI (Chat Completions) ------------------------- */
+
+/* Minimal client with the same shape as the official SDK: client.chat.completions.create(params) */
+function defaultOpenAIClient() {
+    const base = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
+    return {
+        chat: {
+            completions: {
+                create: async (params) => {
+                    const res = await fetch(base + '/chat/completions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.OPENAI_API_KEY },
+                        body: JSON.stringify(params),
+                        signal: AbortSignal.timeout(90_000)
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) throw new Error(`OpenAI ${res.status}: ${(data.error && data.error.message) || 'request failed'}`);
+                    return data;
+                }
+            }
+        }
+    };
+}
+
+const OPENAI_TOOLS = TOOLS.map((t) => ({
+    type: 'function',
+    function: { name: t.name, description: t.description, parameters: t.input_schema, strict: true }
+}));
+
+async function chatOpenAI({ db, key, channel, phone, text, createQuote, notifyHuman, client }) {
+    const settings = getSettings(db);
+    const messages = loadConversation(db, key);
+    const startLength = messages.length;
+    messages.push({ role: 'user', content: text });
+    const ctx = { db, phone, channel, createQuote, notifyHuman, events: [] };
+
+    let reply = '';
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+        const response = await client.chat.completions.create({
+            model: OPENAI_MODEL(),
+            messages: [{ role: 'system', content: systemPrompt(settings) }, ...messages],
+            tools: OPENAI_TOOLS,
+            tool_choice: 'auto'
+        });
+        const choice = (response.choices || [])[0] || {};
+        const msg = choice.message || {};
+        if (msg.refusal) {
+            messages.length = startLength;
+            reply = 'عذراً، لا أستطيع المساعدة في هذا الطلب. سيتواصل معك أحد موظفينا قريباً.';
+            break;
+        }
+        const calls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
+        messages.push({ role: 'assistant', content: msg.content ?? null, ...(calls.length ? { tool_calls: calls } : {}) });
+        reply = String(msg.content || '').trim();
+        if (!calls.length) break;
+
+        for (const call of calls) {
+            let content;
+            try {
+                const input = JSON.parse((call.function && call.function.arguments) || '{}');
+                content = JSON.stringify(await executeTool(call.function.name, input, ctx));
+            } catch (err) {
+                content = JSON.stringify({ error: err.message });
+            }
+            messages.push({ role: 'tool', tool_call_id: call.id, content });
+        }
+    }
+
+    // Never store a turn that ends with unanswered tool results
+    if (messages.length && messages[messages.length - 1].role === 'tool') {
+        messages.length = startLength;
+        reply = reply || 'عذراً، حدث خطأ. سيتواصل معك فريقنا قريباً.';
+    }
+    saveConversation(db, key, channel, messages);
+    return { reply: reply || '…', events: ctx.events };
+}
+
+module.exports = { chat, executeTool, TOOLS, OPENAI_TOOLS, isConfigured, resetConversation, systemPrompt, provider, modelName };

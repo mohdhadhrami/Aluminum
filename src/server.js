@@ -889,12 +889,13 @@ function createApp(db) {
 
     admin.get('/agent/status', (req, res) => res.json({
         configured: agent.isConfigured(),
-        model: process.env.AGENT_MODEL || 'claude-opus-5',
+        provider: agent.provider(),
+        model: agent.modelName(),
         whatsapp_configured: whatsapp.isConfigured()
     }));
 
     admin.post('/agent/chat', asyncRoute(async (req, res) => {
-        if (!agent.isConfigured()) throw httpError(503, 'ANTHROPIC_API_KEY غير مضبوط على الخادم');
+        if (!agent.isConfigured()) throw httpError(503, 'مفتاح الذكاء الاصطناعي (OPENAI_API_KEY أو ANTHROPIC_API_KEY) غير مضبوط على الخادم');
         const session = String(req.body.session || 'default').slice(0, 40);
         const message = String(req.body.message || '').trim();
         if (!message) throw httpError(400, 'اكتب رسالة');
@@ -1043,7 +1044,7 @@ function start() {
         console.log(`  • لوحة الإدارة:   /admin`);
         if (!process.env.ADMIN_TOKEN) console.warn('  ! ADMIN_TOKEN غير مضبوط — لوحة الإدارة مقفلة');
         console.log(`  • واتساب: ${whatsapp.isConfigured() ? 'مفعّل' : 'غير مفعّل'}`);
-        console.log(`  • المساعد الذكي: ${agent.isConfigured() ? 'مفعّل' : 'غير مفعّل (ANTHROPIC_API_KEY)'}`);
+        console.log(`  • المساعد الذكي: ${agent.isConfigured() ? `مفعّل (${agent.provider()} — ${agent.modelName()})` : 'غير مفعّل (OPENAI_API_KEY أو ANTHROPIC_API_KEY)'}`);
     });
 }
 
