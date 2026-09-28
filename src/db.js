@@ -222,6 +222,17 @@ CREATE TABLE IF NOT EXISTS overhead_motors (
 );
 
 -- WhatsApp / test conversations with the AI sales agent
+-- Raw requests received on the MazBot webhook (kept to learn and check its format; last 100)
+CREATE TABLE IF NOT EXISTS inbound_events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    source       TEXT NOT NULL,
+    method       TEXT NOT NULL,
+    content_type TEXT,
+    headers_json TEXT,
+    body         TEXT,
+    received_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS agent_conversations (
     conversation_key  TEXT PRIMARY KEY,
     channel           TEXT NOT NULL,
