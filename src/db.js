@@ -20,7 +20,7 @@ const DEFAULT_SETTINGS = {
     mazbot_recipients: '76979066, 90660001',
     // The AI agent answers customer messages received from MazBot (switch in the admin panel)
     mazbot_agent_enabled: false,    // رقم واتساب الشركة بالصيغة الدولية مثل 9689XXXXXXX
-    public_base_url: '',     // رابط الموقع العام، يستخدم في رسائل واتساب وروابط PDF
+    public_base_url: '',     // رابط هذا النظام (مثل https://calcshutter.radma.co)، يستخدم في رسائل واتساب وروابط PDF
     quote_validity_days: 15, // مدة صلاحية عرض السعر
     // نصوص صفحة العميل (الترويسة والتذييل والملاحظات) — تُعدَّل من تبويب الربط
     company_tagline: 'علامة تجارية عُمانية 100% بإدارة عُمانية 100%',
