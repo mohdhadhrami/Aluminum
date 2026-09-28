@@ -96,6 +96,8 @@ test('an agent quote sends the PDF link; asking for a person pauses the agent an
     const fake = await fakeMazbot();
     t.after(() => fake.server.close());
     const { db, ctx } = setup();
+    // Even when the admin put the company website here, PDF links must point at this system
+    saveSettings(db, { public_base_url: 'https://radma.co' });
     const { motors } = overhead.loadOverhead(db);
     const nizwa = db.prepare("SELECT id FROM regions WHERE name = 'نزوى'").get().id;
 

@@ -229,6 +229,13 @@ async function notifySales(db, quote) {
     return status;
 }
 
+/* This system's own address as the customer reaches it (https unless local) */
+function systemOrigin(req) {
+    const host = req.get('host') || '';
+    const local = /^(localhost|127\.|\[::1\])/.test(host);
+    return `${local ? req.protocol : 'https'}://${host}`;
+}
+
 function sendPdf(res, quote, settings) {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="quotation-${quote.ref}.pdf"`);
@@ -1004,7 +1011,7 @@ function createApp(db) {
         mazbotInbox.handleEvent(db, eventId, event, {
             saveQuote: (q) => saveQuote(db, q),
             notifySales: (quote) => notifySales(db, quote),
-            baseUrl: `${req.protocol}://${req.get('host')}`
+            baseUrl: systemOrigin(req)
         });
         return;
     });

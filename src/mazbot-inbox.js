@@ -100,7 +100,8 @@ async function reply(db, eventId, event, { phone, contact, saveQuote, notifySale
             }
         });
         await send(result.reply);
-        const base = String(settings.public_base_url || baseUrl || '').replace(/\/$/, '');
+        // PDF links always point at this system (where the quotes live), not at the company website
+        const base = String(baseUrl || settings.public_base_url || '').replace(/\/$/, '');
         for (const e of result.events) {
             if (e.type !== 'quote_created') continue;
             await send(`📄 عرض السعر رقم ${e.quote.ref}\n${base}${e.quote.pdf_url}`);
