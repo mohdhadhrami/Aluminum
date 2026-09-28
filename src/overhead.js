@@ -70,7 +70,8 @@ function overheadPrice(db, { gateType, heightCm, widthCm, motorId, regionId }) {
     if (!motor) throw err400('اختر المحرك');
     const region = getRegion(db, regionId);
     const install = region && db.prepare('SELECT overhead_installation_fee AS fee FROM regions WHERE id = ?').get(region.id).fee;
-    if (!region || install == null) throw err400('اختر المحافظة والولاية');
+    if (!region) throw err400('اختر المحافظة والولاية');
+    if (install == null) throw err400(`تركيب بوابات الأوفرهيد غير متاح حالياً في ولاية ${region.name} — يحتاج تواصل فريق المبيعات`);
 
     const vatPercent = Number(getSettings(db).vat_percent) || 0;
     const items = [

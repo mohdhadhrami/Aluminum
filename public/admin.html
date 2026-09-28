@@ -1371,12 +1371,16 @@
                 </div>
                 <p class="status-text">كل رقم جديد يجب أن يراسل رقم واتساب العمل مرة واحدة أولاً ليستقبل القوالب.</p>
                 <p class="sub-heading">رابط Webhook لرسائل العملاء (للمساعد الذكي)</p>
+                <div class="check-row" style="margin-top:0">
+                    <label><input type="checkbox" id="mazbotAgentEnabled"> المساعد الذكي يرد على رسائل العملاء في واتساب (عبر MazBot)</label>
+                    <span class="status-text">— اضغط «حفظ» بعد التغيير. إذا طلب العميل موظفاً يتوقف المساعد عن الرد عليه 12 ساعة ويُبلَّغ فريق المبيعات.</span>
+                </div>
                 <div class="filter-row">
                     <input type="text" id="mazbotWebhookUrl" readonly dir="ltr" style="flex:1; min-width:260px; padding: 8px 12px; border: 2px solid var(--border); border-radius: 8px; font-family: monospace;">
                     <button class="btn btn-outline btn-sm" onclick="copyWebhookUrl()">نسخ</button>
                     <button class="btn btn-outline btn-sm" onclick="loadInbound()">تحديث</button>
                 </div>
-                <p class="status-text">الصق هذا الرابط في إعدادات Webhook في MazBot، ثم أرسل رسالة واتساب إلى رقم العمل. ستظهر الرسالة كما وصلت هنا، ومنها نبني ربط المساعد الذكي.</p>
+                <p class="status-text">الصق هذا الرابط في «Whatsapp External Webhook Url» في MazBot، وضع «Webhook signing secret» في متغير البيئة MAZBOT_SIGNING_SECRET. آخر الطلبات الواردة وما حدث لكل منها تظهر هنا.</p>
                 <div id="inboundList" style="margin-top:8px"></div>
                 <div class="db-actions">
                     <button class="btn btn-accent" onclick="saveSettingsToServer()">حفظ</button>

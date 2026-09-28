@@ -7,7 +7,7 @@
 const CATEGORY_NAMES = { slat: 'شرائح', accessory: 'إكسسوارات', machine: 'مكائن' };
 const UNIT_NAMES = { meter: 'متر', piece: 'قطعة', m2: 'م²', set: 'طقم', kg: 'كجم' };
 const STATUS_NAMES = { new: 'جديد', contacted: 'تم التواصل', accepted: 'مقبول', rejected: 'مرفوض', done: 'مكتمل' };
-const SOURCE_NAMES = { web: 'الحاسبة', whatsapp: 'واتساب (AI)', 'agent-test': 'تجربة المساعد' };
+const SOURCE_NAMES = { web: 'الحاسبة', whatsapp: 'واتساب (AI)', mazbot: 'واتساب MazBot (AI)', 'agent-test': 'تجربة المساعد' };
 const BASIS_NAMES = { fixed: 'ثابت', width: '× العرض', height: '× الارتفاع', area: '× المساحة' };
 const FIELD_NAMES = { purchase_price: 'سعر الشراء', sell_price: 'سعر البيع الثابت', profit_percent: 'نسبة الربح' };
 // Approximate OMR per unit of currency — a starting suggestion, always editable
@@ -89,6 +89,7 @@ function applySettings(s) {
     $id('calculatorNotes').value = s.calculator_notes || '';
     $id('quoteTerms').value = s.quote_terms || '';
     $id('mazbotRecipients').value = s.mazbot_recipients || '';
+    $id('mazbotAgentEnabled').checked = Boolean(s.mazbot_agent_enabled);
     recalculateAll();
 }
 
@@ -115,7 +116,8 @@ async function saveSettingsToServer() {
             calculator_notice: $id('calculatorNotice').value,
             calculator_notes: $id('calculatorNotes').value,
             quote_terms: $id('quoteTerms').value,
-            mazbot_recipients: $id('mazbotRecipients').value
+            mazbot_recipients: $id('mazbotRecipients').value,
+            mazbot_agent_enabled: $id('mazbotAgentEnabled').checked
         });
         applySettings(s);
         await loadProducts(); // LME-based prices depend on these settings
@@ -1017,9 +1019,29 @@ async function loadInbound() {
     const r = await api('GET', '/api/admin/mazbot/inbound');
     $id('mazbotWebhookUrl').value = r.webhook_path ? location.origin + r.webhook_path : 'غير مفعّل — أضف MAZBOT_WEBHOOK_SECRET (16 حرفاً أو أكثر) في متغيرات البيئة';
     const pretty = (text) => { try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; } };
+    const STATUS = {
+        replied: '✅ تم الرد', queued: '⏳ قيد الرد', agent_off: '⏸ المساعد متوقف', duplicate: 'مكرر (تم تجاهله)',
+        bad_signature: '⛔ توقيع غير صحيح'
+    };
+    const statusLabel = (st) => (st ? STATUS[st] || st : '—');
+    const summaryOf = (e) => {
+        try {
+            const j = JSON.parse(e.body);
+            const c = (j.data && j.data.contact) || {};
+            const m = (j.data && j.data.message) || {};
+            return [j.type, c.name, c.phone, m.value && String(m.value).slice(0, 60)].filter(Boolean).join(' — ');
+        } catch { return e.method + ' — ' + (e.content_type || ''); }
+    };
+    const signatureHeaders = (e) => {
+        try {
+            const h = JSON.parse(e.headers_json || '{}');
+            return Object.entries(h).filter(([k]) => k.startsWith('x-mazbot')).map(([k, v]) => `${k}: ${v}`).join('\n');
+        } catch { return ''; }
+    };
     $id('inboundList').innerHTML = r.events.length ? r.events.map((e) => `
         <details style="margin-bottom:6px; border:1px solid var(--border); border-radius:8px; padding:8px 12px">
-            <summary>${esc(e.received_at)} — ${esc(e.method)} — ${esc(e.content_type || '')}</summary>
+            <summary>${esc(e.received_at)} — <strong>${esc(statusLabel(e.status))}</strong> — ${esc(summaryOf(e))}</summary>
+            <pre dir="ltr" style="white-space:pre-wrap; word-break:break-all; font-size:12px; color:var(--text-light)">${esc(signatureHeaders(e))}</pre>
             <pre dir="ltr" style="white-space:pre-wrap; word-break:break-all; font-size:12px; max-height:320px; overflow:auto">${esc(pretty(e.body || ''))}</pre>
         </details>`).join('') : '<p class="status-text">لم تصل أي رسالة بعد.</p>';
 }
