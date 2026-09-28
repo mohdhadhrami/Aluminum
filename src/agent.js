@@ -6,18 +6,31 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { getSettings } = require('./db');
 const doors = require('./doors');
+const overhead = require('./overhead');
 
+/* Which AI runs the agent: AI_PROVIDER=openai|anthropic, or whichever API key is set */
+const hasAnthropicKey = () => Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+const provider = () => {
+    const p = String(process.env.AI_PROVIDER || '').toLowerCase();
+    if (p === 'openai' || p === 'anthropic') return p;
+    return process.env.OPENAI_API_KEY && !hasAnthropicKey() ? 'openai' : 'anthropic';
+};
 const MODEL = () => process.env.AGENT_MODEL || 'claude-opus-5';
+const OPENAI_MODEL = () => process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+const modelName = () => (provider() === 'openai' ? OPENAI_MODEL() : MODEL());
 const EFFORT = () => process.env.AGENT_EFFORT || 'medium';
 const MAX_TOOL_ROUNDS = 8;
 const CONVERSATION_TTL_HOURS = 24;
 const MAX_STORED_MESSAGES = 80;
 
-const isConfigured = () => Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+const isConfigured = () => (provider() === 'openai' ? Boolean(process.env.OPENAI_API_KEY) : hasAnthropicKey());
 
 function systemPrompt(settings) {
     return `أنت مساعد المبيعات في ${settings.company_name} في سلطنة عُمان، وتتحدث مع العملاء عبر واتساب.
-الشركة تركّب بوابات الرول شتر (الأبواب الألمنيوم الملفوفة) بأنواع مختلفة، مع إكسسوارات بفئات مختلفة.
+الشركة تركّب نوعين من البوابات:
+- بوابات الرول شتر (الأبواب الألمنيوم الملفوفة) بأنواع مختلفة، مع إكسسوارات بفئات مختلفة.
+- بوابات الأوفرهيد (السكشنال) تُباع طقماً كاملاً بمقاسات قياسية.
+إذا لم يحدد العميل النوع فاسأله: رول شتر أم أوفرهيد؟ ويمكنه السؤال عن النوعين في نفس المحادثة.
 
 مسار المحادثة لطلب بوابة رول شتر:
 1. رحّب باختصار وتأكد أن العميل يريد بوابة رول شتر.
@@ -28,6 +41,13 @@ function systemPrompt(settings) {
 6. إن وافق، استخدم compare_options واشرح: السماكات/الدرجات المتاحة لهذا النوع (إن وُجد أكثر من واحدة) والألوان المتوفرة مع كل سماكة وسعر الشرائح لكل لون (بعض الألوان لها سعر ورسوم صبغ مختلفة)، ثم الإكسسوارات واحدة تلو الأخرى (المسارات الجانبية، عمود محور الدوران، القواعد، المحرك...) مع فئاتها Class A / B / C وتفاصيل كل فئة وسعرها لهذا المقاس. لا تُغرق العميل بكل شيء في رسالة واحدة إن كانت طويلة.
 7. بعد أن يختار العميل السماكة واللون وفئة كل إكسسوار، استخدم calculate_final_price وأعطه السعر النهائي مع تفصيل مختصر.
 8. اعرض عليه عرض سعر رسمي بصيغة PDF. إن وافق، اسأله عن اسمه ثم استخدم create_quote. سيُرسل الملف له تلقائياً بعد رسالتك.
+
+مسار المحادثة لطلب بوابة أوفرهيد:
+1. اسأل عن مقاس الفتحة بالسنتيمتر (العرض والارتفاع) وعن الولاية (استخدم find_region).
+2. استخدم list_overhead_options: لكل نوع (Type A / Type B) مقاسات قياسية (عرض × ارتفاع 250 أو 300 سم) ومحركات.
+   اختر للعميل المقاس القياسي الأقرب والأكبر من مقاسه الفعلي لكل نوع، ووضّح له المقاس المختار. إذا كانت فتحته أكبر من كل المقاسات فاستخدم request_human.
+3. اسأله عن المحرك (أو اعرض الخيارات وأسعارها)، ثم استخدم calculate_overhead_price وأعطه السعر من ... إلى ... شامل الضريبة والتركيب، ووضّح أن الفرق حسب اللون. يمكنك مقارنة Type A و Type B إن طلب.
+4. اعرض عليه عرض سعر رسمي. إن وافق، اسأله عن اسمه ثم استخدم create_overhead_quote.
 
 قواعد مهمة:
 - لا تذكر أي سعر إلا إذا جاء من إحدى الأدوات. لا تقدّر ولا تخمّن الأسعار أبداً.
@@ -139,6 +159,53 @@ const TOOLS = [
     }
 ];
 
+const overheadChoiceProps = {
+    gate_type: { type: 'string', description: 'نوع بوابة الأوفرهيد كما في list_overhead_options، مثل Type A' },
+    width_cm: { type: 'number', description: 'العرض القياسي المختار بالسنتيمتر (من list_overhead_options)' },
+    height_cm: { type: 'number', description: 'الارتفاع القياسي المختار بالسنتيمتر (250 أو 300)' },
+    motor_id: { type: 'integer', description: 'رقم المحرك من list_overhead_options' },
+    region_id: { type: 'integer', description: 'رقم الولاية من find_region' }
+};
+
+TOOLS.splice(TOOLS.length - 1, 0,
+    {
+        name: 'list_overhead_options',
+        description: 'يعرض بوابات الأوفرهيد: الأنواع (Type A / Type B) ومقاساتها القياسية (العرض لكل ارتفاع) والمحركات وأسعارها.',
+        strict: true,
+        input_schema: { type: 'object', properties: {}, required: [], additionalProperties: false }
+    },
+    {
+        name: 'calculate_overhead_price',
+        description: 'يحسب سعر بوابة أوفرهيد لمقاس قياسي ومحرك وولاية: نطاق من - إلى (حسب اللون) شامل الطقم والمحرك والتركيب والضريبة.',
+        strict: true,
+        input_schema: { type: 'object', properties: overheadChoiceProps, required: Object.keys(overheadChoiceProps), additionalProperties: false }
+    },
+    {
+        name: 'create_overhead_quote',
+        description: 'يسجّل عرض سعر بوابة الأوفرهيد في النظام ويجهز ملف PDF يُرسل للعميل. استخدمه فقط بعد موافقة العميل ومعرفة اسمه.',
+        strict: true,
+        input_schema: {
+            type: 'object',
+            properties: { ...overheadChoiceProps, customer_name: { type: 'string' }, notes: { type: ['string', 'null'], description: 'ملاحظات العميل إن وجدت' } },
+            required: [...Object.keys(overheadChoiceProps), 'customer_name', 'notes'],
+            additionalProperties: false
+        }
+    }
+);
+
+const overheadArgs = (i) => ({ gateType: i.gate_type, widthCm: i.width_cm, heightCm: i.height_cm, motorId: i.motor_id, regionId: i.region_id });
+
+function summarizeOverhead(p) {
+    return {
+        choices: p.spec.map(([label, value]) => `${label}: ${value}`),
+        lines: p.items.map((i) => ({ item: `${i.name}${i.type ? ' — ' + i.type : ''}`, from: i.line_total, to: i.line_total_to ?? i.line_total })),
+        total_with_vat_from: p.total,
+        total_with_vat_to: p.range.total_to,
+        vat_percent: p.vat_percent,
+        note: p.delivery_installation
+    };
+}
+
 const sizeArgs = (i) => ({ widthCm: i.width_cm, heightCm: i.height_cm, count: i.door_count || 1 });
 const choiceArgs = (i) => ({
     ...sizeArgs(i), shutterTypeId: i.shutter_type_id, variantId: i.variant_id, colorId: i.color_id,
@@ -190,6 +257,36 @@ async function executeTool(name, input, ctx) {
             ctx.events.push({ type: 'quote_created', quote });
             return { ref: quote.ref, total: quote.total, pdf: 'سيتم إرسال ملف PDF للعميل تلقائياً بعد رسالتك' };
         }
+        case 'list_overhead_options': {
+            const { sizes, motors } = overhead.loadOverhead(db);
+            return {
+                gate_types: overhead.gateTypes(sizes).map((t) => ({
+                    gate_type: t.name,
+                    sizes: t.heights.map((h) => ({ height_cm: h.height_cm, widths_cm: h.widths }))
+                })),
+                motors: motors.map((m) => ({ motor_id: m.id, name: m.name, price: m.price })),
+                note: 'اختر المقاس القياسي الأقرب والأكبر من مقاس الفتحة. الأسعار تشمل الطقم كاملاً.'
+            };
+        }
+        case 'calculate_overhead_price':
+            return summarizeOverhead(overhead.overheadPrice(db, overheadArgs(input)));
+        case 'create_overhead_quote': {
+            const priced = overhead.overheadPrice(db, overheadArgs(input));
+            const quote = ctx.createQuote({
+                customer_name: input.customer_name,
+                customer_phone: ctx.phone,
+                customer_city: `${priced.region.name}، ${priced.region.governorate}`,
+                notes: input.notes,
+                source: ctx.channel,
+                priced,
+                details: {
+                    calculator: 'overhead', ...priced.gate, governorate: priced.region.governorate,
+                    spec: priced.spec, fees_note: priced.delivery_installation, range: priced.range
+                }
+            });
+            ctx.events.push({ type: 'quote_created', quote });
+            return { ref: quote.ref, total_from: quote.total, total_to: priced.range.total_to, pdf: 'سيتم إرسال رابط ملف PDF للعميل تلقائياً بعد رسالتك' };
+        }
         case 'request_human': {
             ctx.events.push({ type: 'human_requested', summary: input.summary });
             await ctx.notifyHuman(input.summary);
@@ -231,8 +328,11 @@ function saveConversation(db, key, channel, messages) {
         .run(key, channel, JSON.stringify(toStore));
 }
 
+/* Each AI keeps its own history format, so the stored conversation is per provider */
+const storeKey = (key) => (provider() === 'openai' ? 'oa:' + key : key);
+
 function resetConversation(db, key) {
-    db.prepare('DELETE FROM agent_conversations WHERE conversation_key = ?').run(key);
+    db.prepare('DELETE FROM agent_conversations WHERE conversation_key IN (?, ?)').run(key, 'oa:' + key);
 }
 
 /* ------------------------------ Agent loop ----------------------------- */
@@ -244,12 +344,18 @@ const defaultClient = () => (sharedClient ||= new Anthropic());
  * Handle one customer message and return the agent's reply.
  * @param opts { db, key, channel, phone, text, createQuote, notifyHuman, client? }
  */
-async function chat({ db, key, channel, phone, text, createQuote, notifyHuman, client = defaultClient() }) {
+async function chat({ db, key, channel, phone, text, createQuote, notifyHuman, client }) {
     if (/^\s*(جديد|ابدأ من جديد|reset|restart)\s*$/i.test(text)) {
         resetConversation(db, key);
         return { reply: 'تم بدء محادثة جديدة 👋 كيف أقدر أساعدك؟', events: [] };
     }
+    const args = { db, key: storeKey(key), channel, phone, text, createQuote, notifyHuman };
+    return provider() === 'openai'
+        ? chatOpenAI({ ...args, client: client || defaultOpenAIClient() })
+        : chatAnthropic({ ...args, client: client || defaultClient() });
+}
 
+async function chatAnthropic({ db, key, channel, phone, text, createQuote, notifyHuman, client }) {
     const settings = getSettings(db);
     const messages = loadConversation(db, key);
     const startLength = messages.length;
@@ -307,4 +413,81 @@ async function chat({ db, key, channel, phone, text, createQuote, notifyHuman, c
     return { reply: reply || '…', events: ctx.events };
 }
 
-module.exports = { chat, executeTool, TOOLS, isConfigured, resetConversation, systemPrompt };
+/* ------------------------- OpenAI (Chat Completions) ------------------------- */
+
+/* Minimal client with the same shape as the official SDK: client.chat.completions.create(params) */
+function defaultOpenAIClient() {
+    const base = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
+    return {
+        chat: {
+            completions: {
+                create: async (params) => {
+                    const res = await fetch(base + '/chat/completions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.OPENAI_API_KEY },
+                        body: JSON.stringify(params),
+                        signal: AbortSignal.timeout(90_000)
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) throw new Error(`OpenAI ${res.status}: ${(data.error && data.error.message) || 'request failed'}`);
+                    return data;
+                }
+            }
+        }
+    };
+}
+
+const OPENAI_TOOLS = TOOLS.map((t) => ({
+    type: 'function',
+    function: { name: t.name, description: t.description, parameters: t.input_schema, strict: true }
+}));
+
+async function chatOpenAI({ db, key, channel, phone, text, createQuote, notifyHuman, client }) {
+    const settings = getSettings(db);
+    const messages = loadConversation(db, key);
+    const startLength = messages.length;
+    messages.push({ role: 'user', content: text });
+    const ctx = { db, phone, channel, createQuote, notifyHuman, events: [] };
+
+    let reply = '';
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+        const response = await client.chat.completions.create({
+            model: OPENAI_MODEL(),
+            messages: [{ role: 'system', content: systemPrompt(settings) }, ...messages],
+            tools: OPENAI_TOOLS,
+            tool_choice: 'auto'
+        });
+        const choice = (response.choices || [])[0] || {};
+        const msg = choice.message || {};
+        if (msg.refusal) {
+            messages.length = startLength;
+            reply = 'عذراً، لا أستطيع المساعدة في هذا الطلب. سيتواصل معك أحد موظفينا قريباً.';
+            break;
+        }
+        const calls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
+        messages.push({ role: 'assistant', content: msg.content ?? null, ...(calls.length ? { tool_calls: calls } : {}) });
+        reply = String(msg.content || '').trim();
+        if (!calls.length) break;
+
+        for (const call of calls) {
+            let content;
+            try {
+                const input = JSON.parse((call.function && call.function.arguments) || '{}');
+                content = JSON.stringify(await executeTool(call.function.name, input, ctx));
+            } catch (err) {
+                content = JSON.stringify({ error: err.message });
+            }
+            messages.push({ role: 'tool', tool_call_id: call.id, content });
+        }
+    }
+
+    // Never store a turn that ends with unanswered tool results
+    if (messages.length && messages[messages.length - 1].role === 'tool') {
+        messages.length = startLength;
+        reply = reply || 'عذراً، حدث خطأ. سيتواصل معك فريقنا قريباً.';
+    }
+    saveConversation(db, key, channel, messages);
+    return { reply: reply || '…', events: ctx.events };
+}
+
+module.exports = { chat, executeTool, TOOLS, OPENAI_TOOLS, isConfigured, resetConversation, systemPrompt, provider, modelName };

@@ -9,6 +9,8 @@
    Secrets come only from environment variables — never from Git.
    ============================================================= */
 
+const crypto = require('node:crypto');
+
 const env = () => ({
     apiKey: process.env.MAZBOT_API_KEY || '',
     email: process.env.MAZBOT_STAFF_EMAIL || '',
@@ -97,6 +99,74 @@ async function sendTemplate(mobile, values, templateId) {
     return result;
 }
 
+/* ------------------ Free text (replies inside the customer's 24-hour window) ------------------ */
+
+/* Retry once after a 401 (new login) and once after a network/5xx error */
+async function withLogin(send) {
+    if (env().dryRun) return { ok: true, status: 200, error: 'dry_run' };
+    let jwt;
+    try { jwt = await getToken(); } catch (err) { return { ok: false, status: 0, error: err.message }; }
+    let result = await send(jwt);
+    if (!result.ok && result.status === 401) {
+        try { jwt = await getToken(true); result = await send(jwt); } catch (err) { result = { ok: false, status: 0, error: err.message }; }
+    }
+    if (!result.ok && (result.status === 0 || result.status >= 500)) result = await send(jwt);
+    return result;
+}
+
+const outcome = (res, what) => {
+    const ok = res.status === 200 && Boolean(res.body && res.body.success);
+    return { ok, status: res.status, body: res.body, error: ok ? null : res.error || `${what}_failed_http_${res.status} ${JSON.stringify(res.body)}` };
+};
+
+/* Text message to a MazBot contact (receiver_id = data.contact.id of the incoming webhook) */
+function sendText(receiverId, text) {
+    return withLogin(async (jwt) => outcome(await post('/send-message', {
+        receiver_id: receiverId, message: String(text).slice(0, 4000)
+    }, { jwt, multipart: true }), 'send'));
+}
+
+/* Phone → receiver_id (creates the contact if needed) */
+async function resolveContact(phone) {
+    let receiverId = null;
+    const r = await withLogin(async (jwt) => {
+        const res = await post('/contact/resolve-by-phone', { phone }, { jwt });
+        const b = res.body || {};
+        receiverId = (b.data && (b.data.receiver_id ?? b.data.id)) ?? b.receiver_id ?? null;
+        return { ok: res.status === 200 && receiverId != null, status: res.status, error: res.error || `resolve_failed_http_${res.status}` };
+    });
+    return r.ok ? receiverId : null;
+}
+
+/* Text to a phone number (e.g. alert the sales numbers; works inside their 24-hour window) */
+async function sendTextToPhone(phone, text) {
+    if (env().dryRun) return { ok: true, status: 200, error: 'dry_run' };
+    const receiverId = await resolveContact(phone);
+    if (receiverId == null) return { ok: false, status: 0, error: 'resolve_failed' };
+    return sendText(receiverId, text);
+}
+
+/* ------------------------- Incoming webhook signature ------------------------- */
+
+/* X-Mazbot-Signature: HMAC-SHA256 of the raw body with the signing secret. Accepted forms:
+   hex or base64, optionally prefixed "sha256=", or "t=<timestamp>,v1=<hmac of t.body>". */
+function verifySignature(rawBody, header, secret) {
+    if (!secret) return true;
+    const h = String(header || '').trim();
+    if (!h) return false;
+    const body = Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(String(rawBody || ''));
+    const hmac = (data) => crypto.createHmac('sha256', secret).update(data);
+    const candidates = [];
+    const parts = Object.fromEntries(h.split(',').map((p) => p.trim().split('=')).filter((kv) => kv.length === 2));
+    if (parts.t && parts.v1) {
+        candidates.push([parts.v1, hmac(Buffer.concat([Buffer.from(parts.t + '.'), body])).digest('hex')]);
+    }
+    const given = h.replace(/^sha256=/i, '');
+    const digest = hmac(body).digest();
+    candidates.push([given, digest.toString('hex')], [given, digest.toString('base64')]);
+    return candidates.some(([a, b]) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b)));
+}
+
 /* "76979066, 90660001" → ['96876979066', '96890660001'] */
 function parseRecipients(text) {
     return String(text || '').split(/[,،;\n]+/).map((p) => p.replace(/\D/g, '')).filter(Boolean)
@@ -116,4 +186,4 @@ async function sendToAll(recipients, values, calculator = 'rolling_shutter') {
     return { sent, total: results.length, results };
 }
 
-module.exports = { isConfigured, hasLogin, templateFor, sendToAll, parseRecipients, cleanValue, _reset: () => { tokenCache = { token: null, expiresAt: 0 }; } };
+module.exports = { isConfigured, hasLogin, templateFor, sendToAll, sendText, sendTextToPhone, verifySignature, parseRecipients, cleanValue, _reset: () => { tokenCache = { token: null, expiresAt: 0 }; } };

@@ -17,7 +17,9 @@ const DEFAULT_SETTINGS = {
     company_name: 'مصنع شرائح الألمنيوم',
     company_whatsapp: '',
     // Sales numbers that get the MazBot WhatsApp template for every calculator request
-    mazbot_recipients: '76979066, 90660001',    // رقم واتساب الشركة بالصيغة الدولية مثل 9689XXXXXXX
+    mazbot_recipients: '76979066, 90660001',
+    // The AI agent answers customer messages received from MazBot (switch in the admin panel)
+    mazbot_agent_enabled: false,    // رقم واتساب الشركة بالصيغة الدولية مثل 9689XXXXXXX
     public_base_url: '',     // رابط الموقع العام، يستخدم في رسائل واتساب وروابط PDF
     quote_validity_days: 15, // مدة صلاحية عرض السعر
     // نصوص صفحة العميل (الترويسة والتذييل والملاحظات) — تُعدَّل من تبويب الربط
@@ -233,6 +235,12 @@ CREATE TABLE IF NOT EXISTS inbound_events (
     received_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Customers the agent leaves to the sales team for a while (after "talk to a person")
+CREATE TABLE IF NOT EXISTS agent_pauses (
+    phone  TEXT PRIMARY KEY,
+    until  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS agent_conversations (
     conversation_key  TEXT PRIMARY KEY,
     channel           TEXT NOT NULL,
@@ -346,6 +354,8 @@ function migrate(db) {
     addColumns('shutter_colors', { variant_id: 'INTEGER', price_per_m2: 'REAL', fixed_fee: 'REAL NOT NULL DEFAULT 0' });
     // Overhead gates have their own installation fee per wilayah (NULL = not offered there)
     addColumns('regions', { overhead_installation_fee: 'REAL' });
+    // What happened to each MazBot webhook request, and the message key used to answer it only once
+    addColumns('inbound_events', { status: 'TEXT', event_key: 'TEXT' });
 }
 
 /* "~/radma-data/aluminum.db" → the account's home folder. On shared hosting this keeps the
@@ -402,7 +412,9 @@ function saveSettings(db, patch) {
     for (const key of Object.keys(DEFAULT_SETTINGS)) {
         if (patch[key] === undefined) continue;
         const numeric = typeof DEFAULT_SETTINGS[key] === 'number';
-        const value = numeric ? Number(patch[key]) : String(patch[key]);
+        const boolean = typeof DEFAULT_SETTINGS[key] === 'boolean';
+        const value = boolean ? patch[key] === true || patch[key] === 'true' || patch[key] === 1
+            : numeric ? Number(patch[key]) : String(patch[key]);
         if (numeric && !Number.isFinite(value)) {
             throw Object.assign(new Error(`قيمة غير صالحة للحقل ${key}`), { status: 400 });
         }

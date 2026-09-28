@@ -22,6 +22,7 @@ const overhead = require('./overhead');
 const agent = require('./agent');
 const mazbot = require('./mazbot');
 const backup = require('./backup');
+const mazbotInbox = require('./mazbot-inbox');
 const { renderQuotePdf } = require('./pdf');
 
 const APP_VERSION = require('../package.json').version;
@@ -888,12 +889,13 @@ function createApp(db) {
 
     admin.get('/agent/status', (req, res) => res.json({
         configured: agent.isConfigured(),
-        model: process.env.AGENT_MODEL || 'claude-opus-5',
+        provider: agent.provider(),
+        model: agent.modelName(),
         whatsapp_configured: whatsapp.isConfigured()
     }));
 
     admin.post('/agent/chat', asyncRoute(async (req, res) => {
-        if (!agent.isConfigured()) throw httpError(503, 'ANTHROPIC_API_KEY غير مضبوط على الخادم');
+        if (!agent.isConfigured()) throw httpError(503, 'مفتاح الذكاء الاصطناعي (OPENAI_API_KEY أو ANTHROPIC_API_KEY) غير مضبوط على الخادم');
         const session = String(req.body.session || 'default').slice(0, 40);
         const message = String(req.body.message || '').trim();
         if (!message) throw httpError(400, 'اكتب رسالة');
@@ -972,8 +974,9 @@ function createApp(db) {
 
     whatsapp.registerRoutes(app, db, { saveQuote: (q) => saveQuote(db, q) });
 
-    /* MazBot webhook (step 1): record exactly what MazBot sends, so the AI agent can be wired to
-       its real format. The secret in the path is the access control (MAZBOT_WEBHOOK_SECRET). */
+    /* MazBot webhook: customer WhatsApp messages → AI agent → reply via MazBot.
+       Every request is kept (last 100) with what happened to it, for checking in the admin panel.
+       The secret in the path (MAZBOT_WEBHOOK_SECRET) and X-Mazbot-Signature are the access control. */
     const webhookSecretOk = (given) => {
         const secret = process.env.MAZBOT_WEBHOOK_SECRET || '';
         return secret.length >= 16 && given.length === secret.length &&
@@ -985,10 +988,25 @@ function createApp(db) {
         const body = raw && raw.length ? raw.toString('utf8') : (req.body && !Buffer.isBuffer(req.body) ? JSON.stringify(req.body) : '');
         const headers = Object.fromEntries(Object.entries(req.headers)
             .filter(([k]) => !['cookie', 'authorization'].includes(k)));
-        db.prepare(`INSERT INTO inbound_events (source, method, content_type, headers_json, body) VALUES ('mazbot', ?, ?, ?, ?)`)
+        const info = db.prepare(`INSERT INTO inbound_events (source, method, content_type, headers_json, body) VALUES ('mazbot', ?, ?, ?, ?)`)
             .run(req.method, req.get('content-type') || null, JSON.stringify({ ...headers, query: req.query }), body.slice(0, 100_000));
+        const eventId = Number(info.lastInsertRowid);
         db.prepare(`DELETE FROM inbound_events WHERE id NOT IN (SELECT id FROM inbound_events ORDER BY id DESC LIMIT 100)`).run();
-        res.json({ ok: true });
+
+        // X-Mazbot-Signature proves the request comes from MazBot (MAZBOT_SIGNING_SECRET from the MazBot webhook page)
+        if (!mazbot.verifySignature(raw || body, req.get('x-mazbot-signature'), process.env.MAZBOT_SIGNING_SECRET || '')) {
+            db.prepare('UPDATE inbound_events SET status = ? WHERE id = ?').run('bad_signature', eventId);
+            return res.status(401).json({ error: 'invalid signature' });
+        }
+        let event = null;
+        try { event = JSON.parse(body); } catch { /* not JSON */ }
+        res.json({ ok: true }); // acknowledge fast; the reply is sent in the background
+        mazbotInbox.handleEvent(db, eventId, event, {
+            saveQuote: (q) => saveQuote(db, q),
+            notifySales: (quote) => notifySales(db, quote),
+            baseUrl: `${req.protocol}://${req.get('host')}`
+        });
+        return;
     });
     // Pages: the customer calculator is the site's home page (shareable link, no password);
     // the admin panel lives at /admin and asks for the admin password.
@@ -1026,7 +1044,7 @@ function start() {
         console.log(`  • لوحة الإدارة:   /admin`);
         if (!process.env.ADMIN_TOKEN) console.warn('  ! ADMIN_TOKEN غير مضبوط — لوحة الإدارة مقفلة');
         console.log(`  • واتساب: ${whatsapp.isConfigured() ? 'مفعّل' : 'غير مفعّل'}`);
-        console.log(`  • المساعد الذكي: ${agent.isConfigured() ? 'مفعّل' : 'غير مفعّل (ANTHROPIC_API_KEY)'}`);
+        console.log(`  • المساعد الذكي: ${agent.isConfigured() ? `مفعّل (${agent.provider()} — ${agent.modelName()})` : 'غير مفعّل (OPENAI_API_KEY أو ANTHROPIC_API_KEY)'}`);
     });
 }
 
