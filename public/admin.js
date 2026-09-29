@@ -7,7 +7,7 @@
 const CATEGORY_NAMES = { slat: 'شرائح', accessory: 'إكسسوارات', machine: 'مكائن' };
 const UNIT_NAMES = { meter: 'متر', piece: 'قطعة', m2: 'م²', set: 'طقم', kg: 'كجم' };
 const STATUS_NAMES = { new: 'جديد', contacted: 'تم التواصل', accepted: 'مقبول', rejected: 'مرفوض', done: 'مكتمل' };
-const SOURCE_NAMES = { web: 'الحاسبة', whatsapp: 'واتساب (AI)', mazbot: 'واتساب MazBot (AI)', 'agent-test': 'تجربة المساعد' };
+const SOURCE_NAMES = { web: 'الحاسبة', whatsapp: 'واتساب (AI)', mazbot: 'واتساب MazBot (AI)', website: 'مساعد الموقع (AI)', 'agent-test': 'تجربة المساعد' };
 const BASIS_NAMES = { fixed: 'ثابت', width: '× العرض', height: '× الارتفاع', area: '× المساحة' };
 const FIELD_NAMES = { purchase_price: 'سعر الشراء', sell_price: 'سعر البيع الثابت', profit_percent: 'نسبة الربح' };
 // Approximate OMR per unit of currency — a starting suggestion, always editable
@@ -90,6 +90,9 @@ function applySettings(s) {
     $id('quoteTerms').value = s.quote_terms || '';
     $id('mazbotRecipients').value = s.mazbot_recipients || '';
     $id('mazbotAgentEnabled').checked = Boolean(s.mazbot_agent_enabled);
+    $id('websiteChatEnabled').checked = Boolean(s.website_chat_enabled);
+    $id('websiteChatGreeting').value = s.website_chat_greeting || '';
+    $id('chatSnippet').value = `<script src="${location.origin}/chat-widget.js" async></script>`;
     recalculateAll();
 }
 
@@ -117,7 +120,9 @@ async function saveSettingsToServer() {
             calculator_notes: $id('calculatorNotes').value,
             quote_terms: $id('quoteTerms').value,
             mazbot_recipients: $id('mazbotRecipients').value,
-            mazbot_agent_enabled: $id('mazbotAgentEnabled').checked
+            mazbot_agent_enabled: $id('mazbotAgentEnabled').checked,
+            website_chat_enabled: $id('websiteChatEnabled').checked,
+            website_chat_greeting: $id('websiteChatGreeting').value
         });
         applySettings(s);
         await loadProducts(); // LME-based prices depend on these settings
@@ -1044,6 +1049,12 @@ async function loadInbound() {
             <pre dir="ltr" style="white-space:pre-wrap; word-break:break-all; font-size:12px; color:var(--text-light)">${esc(signatureHeaders(e))}</pre>
             <pre dir="ltr" style="white-space:pre-wrap; word-break:break-all; font-size:12px; max-height:320px; overflow:auto">${esc(pretty(e.body || ''))}</pre>
         </details>`).join('') : '<p class="status-text">لم تصل أي رسالة بعد.</p>';
+}
+
+function copyChatSnippet() {
+    const input = $id('chatSnippet');
+    input.select();
+    navigator.clipboard.writeText(input.value).catch(() => document.execCommand('copy'));
 }
 
 function copyWebhookUrl() {

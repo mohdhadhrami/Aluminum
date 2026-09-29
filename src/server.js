@@ -242,7 +242,7 @@ function sendPdf(res, quote, settings) {
     renderQuotePdf(quote, settings, res);
 }
 
-function createApp(db) {
+function createApp(db, { agentClient } = {}) {
     const app = express();
     app.set('trust proxy', process.env.TRUST_PROXY === '1');
     app.use(express.json({ limit: '200kb', verify: (req, res, buf) => { req.rawBody = buf; } }));
@@ -250,7 +250,7 @@ function createApp(db) {
 
     // Security headers. Only the customer pages may be embedded, and only by the allowed sites;
     // the admin panel and everything else can never be framed (clickjacking protection).
-    const customerPages = new Set(['/', '/calculator.html', '/overhead', '/overhead.html', '/materials.html']);
+    const customerPages = new Set(['/', '/calculator.html', '/overhead', '/overhead.html', '/materials.html', '/chat', '/chat.html']);
     app.use((req, res, next) => {
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -275,7 +275,7 @@ function createApp(db) {
     /* Status check for the hosting panel / uptime monitors */
     app.get('/healthz', (req, res) => {
         db.prepare('SELECT 1').get();
-        res.json({ ok: true, version: APP_VERSION, features: ['quote_terms', 'mazbot', 'backup', 'overhead'], node: process.versions.node });
+        res.json({ ok: true, version: APP_VERSION, features: ['quote_terms', 'mazbot', 'backup', 'overhead', 'website_chat'], node: process.versions.node });
     });
 
     /* ------------------------- Public API ------------------------- */
@@ -416,6 +416,57 @@ function createApp(db) {
             spec: priced.spec, fees_note: priced.delivery_installation, range: priced.range
         });
     });
+
+    /* ---- Website chat (chat bubble on radma.co, see chat-widget.js): the same AI agent ---- */
+
+    app.get('/api/public/chat/config', (req, res) => {
+        res.setHeader('Access-Control-Allow-Origin', '*'); // read by chat-widget.js on the company website
+        const settings = getSettings(db);
+        res.json({
+            enabled: Boolean(settings.website_chat_enabled) && agent.isConfigured(),
+            company_name: settings.company_name,
+            greeting: settings.website_chat_greeting,
+            whatsapp: settings.company_whatsapp ? whatsapp.normalizePhone(settings.company_whatsapp) : null
+        });
+    });
+
+    const chatLimit = rateLimit({ windowMs: 10 * 60_000, max: 30 });
+    const chatQueues = new Map();
+    const inSessionOrder = (key, job) => {
+        const next = (chatQueues.get(key) || Promise.resolve()).catch(() => {}).then(job);
+        chatQueues.set(key, next);
+        next.finally(() => { if (chatQueues.get(key) === next) chatQueues.delete(key); }).catch(() => {});
+        return next;
+    };
+
+    app.post('/api/public/chat', chatLimit, asyncRoute(async (req, res) => {
+        const settings = getSettings(db);
+        if (!settings.website_chat_enabled || !agent.isConfigured()) throw httpError(503, 'المساعد غير متاح حالياً');
+        const session = String((req.body || {}).session_id || '');
+        if (!/^[A-Za-z0-9-]{16,64}$/.test(session)) throw httpError(400, 'جلسة غير صالحة');
+        const text = String(req.body.message || '').trim().slice(0, 1000);
+        if (!text) throw httpError(400, 'اكتب رسالتك');
+
+        const result = await inSessionOrder(session, () => agent.chat({
+            db, key: 'web:' + session, channel: 'website', phone: null, text, client: agentClient,
+            createQuote: (q) => saveQuote(db, q),
+            notifyHuman: async (summary) => {
+                const alert = `🙋 زائر الموقع يطلب التواصل مع فريق المبيعات\n\n${summary}`;
+                for (const to of mazbot.parseRecipients(settings.mazbot_recipients)) {
+                    const r = await mazbot.sendTextToPhone(to, alert);
+                    if (!r.ok) console.error('[chat] alert', to, r.error);
+                }
+            }
+        }));
+        const quotes = result.events.filter((e) => e.type === 'quote_created').map(({ quote }) => {
+            notifySales(db, quote).catch((err) => console.error('[mazbot]', err.message));
+            return {
+                ref: quote.ref, pdf_url: systemOrigin(req) + quote.pdf_url, total: quote.total,
+                total_to: quote.details && quote.details.range ? quote.details.range.total_to : null
+            };
+        });
+        res.json({ reply: result.reply, quotes, human_requested: result.events.some((e) => e.type === 'human_requested') });
+    }));
 
     /* Customer-facing PDF: the random key in the link is the access control */
     app.get('/quotes/:ref.pdf', (req, res) => {
@@ -1020,6 +1071,7 @@ function createApp(db) {
     const publicDir = path.join(__dirname, '..', 'public');
     app.get('/', (req, res) => res.sendFile(path.join(publicDir, 'calculator.html')));
     app.get(['/overhead', '/overhead/'], (req, res) => res.sendFile(path.join(publicDir, 'overhead.html')));
+    app.get(['/chat', '/chat/'], (req, res) => res.sendFile(path.join(publicDir, 'chat.html')));
     app.get(['/admin', '/admin/'], (req, res) => res.sendFile(path.join(publicDir, 'admin.html')));
     app.get(['/index.html', '/admin.html'], (req, res) => res.redirect(301, '/admin'));
     app.use(express.static(publicDir, { index: false }));

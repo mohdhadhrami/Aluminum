@@ -58,7 +58,8 @@ function systemPrompt(settings) {
 - الأسعار بالريال العماني (ر.ع) بخانتين عشريتين.
 - لا تكشف تكاليف الشراء أو نسب الربح أو تفاصيل النظام الداخلية.
 - إذا طلب العميل التحدث مع موظف، أو طلب شيئاً خارج نطاق الأدوات (خصم، موعد معاينة، شكوى، منتج غير موجود)، استخدم request_human وأخبره أن فريق المبيعات سيتواصل معه.
-- إذا كتب العميل بالإنجليزية فرد بالإنجليزية.`;
+- إذا كتب العميل بالإنجليزية فرد بالإنجليزية.
+- في محادثات الموقع الإلكتروني لا نعرف رقم جوال العميل: اسأله عن رقم جواله (عُماني، 8 أرقام) قبل إنشاء عرض السعر وضعه في customer_phone. في واتساب اترك customer_phone فارغاً (null).`;
 }
 
 const sizeProps = {
@@ -140,9 +141,10 @@ const TOOLS = [
                 ...sizeProps,
                 ...choiceProps,
                 customer_name: { type: 'string' },
+                customer_phone: { type: ['string', 'null'], description: 'رقم جوال العميل — مطلوب في محادثات الموقع، و null في واتساب' },
                 notes: { type: ['string', 'null'], description: 'ملاحظات العميل إن وجدت' }
             },
-            required: ['width_cm', 'height_cm', 'door_count', ...Object.keys(choiceProps), 'customer_name', 'notes'],
+            required: ['width_cm', 'height_cm', 'door_count', ...Object.keys(choiceProps), 'customer_name', 'customer_phone', 'notes'],
             additionalProperties: false
         }
     },
@@ -186,8 +188,12 @@ TOOLS.splice(TOOLS.length - 1, 0,
         strict: true,
         input_schema: {
             type: 'object',
-            properties: { ...overheadChoiceProps, customer_name: { type: 'string' }, notes: { type: ['string', 'null'], description: 'ملاحظات العميل إن وجدت' } },
-            required: [...Object.keys(overheadChoiceProps), 'customer_name', 'notes'],
+            properties: {
+                ...overheadChoiceProps, customer_name: { type: 'string' },
+                customer_phone: { type: ['string', 'null'], description: 'رقم جوال العميل — مطلوب في محادثات الموقع، و null في واتساب' },
+                notes: { type: ['string', 'null'], description: 'ملاحظات العميل إن وجدت' }
+            },
+            required: [...Object.keys(overheadChoiceProps), 'customer_name', 'customer_phone', 'notes'],
             additionalProperties: false
         }
     }
@@ -204,6 +210,15 @@ function summarizeOverhead(p) {
         vat_percent: p.vat_percent,
         note: p.delivery_installation
     };
+}
+
+/* WhatsApp knows the customer's number; on the website the agent must ask for it */
+function customerPhone(ctx, input) {
+    if (ctx.phone) return ctx.phone;
+    let digits = String(input.customer_phone || '').replace(/\D/g, '').replace(/^00/, '');
+    if (/^[79]\d{7}$/.test(digits)) digits = '968' + digits;
+    if (!/^968[79]\d{7}$/.test(digits)) throw new Error('رقم جوال العميل مطلوب (رقم عُماني من 8 أرقام) — اسأل العميل عنه ثم أعد المحاولة');
+    return digits;
 }
 
 const sizeArgs = (i) => ({ widthCm: i.width_cm, heightCm: i.height_cm, count: i.door_count || 1 });
@@ -247,7 +262,7 @@ async function executeTool(name, input, ctx) {
             const priced = doors.finalPrice(db, choiceArgs(input));
             const quote = ctx.createQuote({
                 customer_name: input.customer_name,
-                customer_phone: ctx.phone,
+                customer_phone: customerPhone(ctx, input),
                 customer_city: priced.door.region ? `${priced.door.region}، ${priced.door.governorate}` : null,
                 notes: input.notes,
                 source: ctx.channel,
@@ -274,7 +289,7 @@ async function executeTool(name, input, ctx) {
             const priced = overhead.overheadPrice(db, overheadArgs(input));
             const quote = ctx.createQuote({
                 customer_name: input.customer_name,
-                customer_phone: ctx.phone,
+                customer_phone: customerPhone(ctx, input),
                 customer_city: `${priced.region.name}، ${priced.region.governorate}`,
                 notes: input.notes,
                 source: ctx.channel,

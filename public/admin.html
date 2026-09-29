@@ -1361,6 +1361,29 @@
 
             <div class="card">
                 <div class="card-title">
+                    <span class="icon">💬</span>
+                    المساعد الذكي في الموقع الإلكتروني (radma.co)
+                </div>
+                <div class="check-row" style="margin-top:0">
+                    <label><input type="checkbox" id="websiteChatEnabled"> إظهار أيقونة المساعد الذكي في الموقع</label>
+                    <span class="status-text">— نفس المساعد وأسعار النظام. عند إيقافها تختفي الأيقونة من الموقع مباشرة.</span>
+                </div>
+                <div class="form-grid">
+                    <div class="form-group" style="grid-column: 1 / -1;"><label>رسالة الترحيب</label><textarea id="websiteChatGreeting" rows="2"></textarea></div>
+                </div>
+                <p class="sub-heading">كود الإضافة في الموقع <span class="status-text">— ضعه قبل &lt;/body&gt; في صفحات radma.co</span></p>
+                <div class="filter-row">
+                    <input type="text" id="chatSnippet" readonly dir="ltr" style="flex:1; min-width:260px; padding: 8px 12px; border: 2px solid var(--border); border-radius: 8px; font-family: monospace;">
+                    <button class="btn btn-outline btn-sm" onclick="copyChatSnippet()">نسخ</button>
+                    <a class="btn btn-outline btn-sm" href="/chat" target="_blank" rel="noopener">تجربة المحادثة</a>
+                </div>
+                <div class="db-actions">
+                    <button class="btn btn-accent" onclick="saveSettingsToServer()">حفظ</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
                     <span class="icon">M</span>
                     واتساب المبيعات عبر MazBot <span class="badge" id="mazbotStatus" style="margin-inline-start:10px"></span> <span class="badge" id="mazbotOverheadStatus" style="margin-inline-start:6px"></span>
                 </div>
