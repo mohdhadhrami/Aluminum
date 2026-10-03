@@ -7,6 +7,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { getSettings } = require('./db');
 const doors = require('./doors');
 const overhead = require('./overhead');
+const knowledge = require('./knowledge');
 
 /* Which AI runs the agent: AI_PROVIDER=openai|anthropic, or whichever API key is set */
 const hasAnthropicKey = () => Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
@@ -36,7 +37,19 @@ function companyInfo(settings) {
     return lines.length ? lines.join('\n') : '(لا توجد معلومات إضافية — حوّل الأسئلة العامة إلى فريق المبيعات)';
 }
 
-function systemPrompt(settings) {
+/* The admin's guidelines and the knowledge base (both edited in the admin panel) */
+function adminSections(settings, db) {
+    const parts = [];
+    const guide = String(settings.agent_instructions || '').trim();
+    if (guide) {
+        parts.push('توجيهات الإدارة (اتبعها، إلا إذا تعارضت مع قواعد الأسعار والأدوات أعلاه فالقواعد أولى):\n' + guide.slice(0, 6000));
+    }
+    const kb = db ? knowledge.promptSection(db) : '';
+    if (kb) parts.push(kb);
+    return parts.length ? '\n\n' + parts.join('\n\n') : '';
+}
+
+function systemPrompt(settings, db = null) {
     return `أنت مساعد المبيعات في ${settings.company_name} في سلطنة عُمان، وتتحدث مع العملاء عبر واتساب.
 الشركة تركّب نوعين من البوابات:
 - بوابات الرول شتر (الأبواب الألمنيوم الملفوفة) بأنواع مختلفة، مع إكسسوارات بفئات مختلفة.
@@ -68,13 +81,13 @@ function systemPrompt(settings) {
 - اكتب بالعربية بأسلوب ودود ومختصر يناسب واتساب. استخدم *نص* للتغميق، ولا تستخدم الجداول أو عناوين Markdown.
 - الأسعار بالريال العماني (ر.ع) بخانتين عشريتين.
 - لا تكشف تكاليف الشراء أو نسب الربح أو تفاصيل النظام الداخلية.
-- أجب عن الأسئلة العامة (أوقات العمل، الموقع، الضمان، طرق الدفع، مدة التوريد والتركيب، الخدمات...) من قسم «معلومات الشركة» أدناه فقط. إذا لم تجد الإجابة فيه فلا تخترعها: قل إنك ستتأكد من فريق المبيعات واستخدم request_human.
+- أجب عن الأسئلة العامة (أوقات العمل، الموقع، الضمان، طرق الدفع، مدة التوريد والتركيب، الخدمات...) من قسمي «معلومات الشركة» و«قاعدة المعرفة» أدناه فقط (وإن وُجدت الأداة search_knowledge فابحث بها). إذا لم تجد الإجابة فيه فلا تخترعها: قل إنك ستتأكد من فريق المبيعات واستخدم request_human.
 - إذا طلب العميل التحدث مع موظف، أو طلب شيئاً خارج نطاق الأدوات ومعلومات الشركة (خصم، موعد معاينة، شكوى، منتج غير موجود)، استخدم request_human وأخبره أن فريق المبيعات سيتواصل معه.
 - إذا كتب العميل بالإنجليزية فرد بالإنجليزية.
 - في محادثات الموقع الإلكتروني لا نعرف رقم جوال العميل: اسأله عن رقم جواله (عُماني، 8 أرقام) قبل إنشاء عرض السعر وضعه في customer_phone. في واتساب اترك customer_phone فارغاً (null).
 
 معلومات الشركة (مصدر إجاباتك عن الأسئلة العامة):
-${companyInfo(settings)}`;
+${companyInfo(settings)}${adminSections(settings, db)}`;
 }
 
 const sizeProps = {
@@ -186,6 +199,17 @@ const overheadChoiceProps = {
 
 TOOLS.splice(TOOLS.length - 1, 0,
     {
+        name: 'search_knowledge',
+        description: 'يبحث في قاعدة معرفة الشركة (الأسئلة الشائعة والمعلومات والمستندات) عن إجابة سؤال عام مثل أوقات العمل أو الضمان أو طرق الدفع.',
+        strict: true,
+        input_schema: {
+            type: 'object',
+            properties: { query: { type: 'string', description: 'كلمات السؤال' } },
+            required: ['query'],
+            additionalProperties: false
+        }
+    },
+    {
         name: 'list_overhead_options',
         description: 'يعرض بوابات الأوفرهيد: الأنواع (Type A / Type B) ومقاساتها القياسية (العرض لكل ارتفاع) والمحركات وأسعارها.',
         strict: true,
@@ -286,6 +310,10 @@ async function executeTool(name, input, ctx) {
             });
             ctx.events.push({ type: 'quote_created', quote });
             return { ref: quote.ref, total: quote.total, pdf: 'سيتم إرسال ملف PDF للعميل تلقائياً بعد رسالتك' };
+        }
+        case 'search_knowledge': {
+            const results = knowledge.search(db, input.query);
+            return results.length ? { results } : { results: [], message: 'لا توجد إجابة في قاعدة المعرفة — لا تخترع إجابة، وحوّل السؤال لفريق المبيعات إن لزم.' };
         }
         case 'list_overhead_options': {
             const { sizes, motors } = overhead.loadOverhead(db);
@@ -402,7 +430,7 @@ async function chatAnthropic({ db, key, channel, phone, text, createQuote, notif
             thinking: { type: 'adaptive' },
             output_config: { effort: EFFORT() },
             cache_control: { type: 'ephemeral' },
-            system: systemPrompt(settings),
+            system: systemPrompt(settings, db),
             tools: TOOLS,
             messages
         });
@@ -483,7 +511,7 @@ async function chatOpenAI({ db, key, channel, phone, text, createQuote, notifyHu
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
         const response = await client.chat.completions.create({
             model: OPENAI_MODEL(),
-            messages: [{ role: 'system', content: systemPrompt(settings) }, ...messages],
+            messages: [{ role: 'system', content: systemPrompt(settings, db) }, ...messages],
             tools: OPENAI_TOOLS,
             tool_choice: 'auto'
         });

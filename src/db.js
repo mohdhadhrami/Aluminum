@@ -24,6 +24,8 @@ const DEFAULT_SETTINGS = {
     website_chat_enabled: false,
     // Company information the AI agent answers from (hours, location, warranty, FAQ...) — edited in the admin panel
     agent_knowledge: '',
+    // The admin's own guidelines for the agent (tone, what to say or avoid...) — added after the built-in rules
+    agent_instructions: '',
     website_chat_greeting: 'مرحباً بك 👋 أنا المساعد الذكي. أستطيع حساب سعر بوابات الرول شتر والأوفرهيد لك خلال دقائق. ما المقاس الذي تحتاجه؟',    // رقم واتساب الشركة بالصيغة الدولية مثل 9689XXXXXXX
     public_base_url: '',     // رابط هذا النظام (مثل https://calcshutter.radma.co)، يستخدم في رسائل واتساب وروابط PDF
     quote_validity_days: 15, // مدة صلاحية عرض السعر
@@ -238,6 +240,19 @@ CREATE TABLE IF NOT EXISTS inbound_events (
     headers_json TEXT,
     body         TEXT,
     received_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Knowledge base of the AI agent: FAQs, information, uploaded documents (admin panel)
+CREATE TABLE IF NOT EXISTS knowledge_items (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind         TEXT NOT NULL DEFAULT 'info',
+    title        TEXT NOT NULL,
+    content      TEXT NOT NULL,
+    source_name  TEXT,
+    active       INTEGER NOT NULL DEFAULT 1,
+    sort_order   INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- Customers the agent leaves to the sales team for a while (after "talk to a person")
