@@ -95,3 +95,35 @@ test('website visitors get prices and a quote; the agent must ask for the mobile
     // The PDF link works
     assert.strictEqual((await fetch(second.quotes[0].pdf_url)).status, 200);
 });
+
+test('when the AI fails, visitors get a polite message and the admin sees the real reason', async (t) => {
+    const saved = { a: process.env.ANTHROPIC_API_KEY, o: process.env.OPENAI_API_KEY };
+    delete process.env.ANTHROPIC_API_KEY;
+    process.env.OPENAI_API_KEY = 'sk-test';
+    t.after(() => {
+        if (saved.o) process.env.OPENAI_API_KEY = saved.o; else delete process.env.OPENAI_API_KEY;
+        if (saved.a) process.env.ANTHROPIC_API_KEY = saved.a;
+    });
+    const client = { chat: { completions: { create: async () => {
+        throw new Error('OpenAI 404: The model `gpt-wrong` does not exist (key sk-abcdefghijklmnop)');
+    } } } };
+    const app = await start(client);
+    t.after(() => app.server.close());
+    saveSettings(app.db, { website_chat_enabled: true });
+
+    const res = await app.chat({ session_id: SESSION, message: 'كم السعر؟' });
+    assert.strictEqual(res.status, 502);
+    assert.match((await res.json()).error, /المساعد غير متاح مؤقتاً/);
+
+    const status = await (await fetch(app.base + '/api/admin/system-status', { headers: { Authorization: 'Bearer test-token' } })).json();
+    const w = status.warnings.find((x) => /آخر خطأ من الذكاء الاصطناعي/.test(x.text));
+    assert.ok(w, 'admin warning shown');
+    assert.match(w.text, /does not exist/);
+    assert.doesNotMatch(w.text, /sk-abcdefghijklmnop/); // keys are masked
+
+    // A switched-off chat says so clearly (no generic "server error")
+    saveSettings(app.db, { website_chat_enabled: false });
+    const off = await app.chat({ session_id: SESSION, message: 'مرحبا' });
+    assert.strictEqual(off.status, 503);
+    assert.match((await off.json()).error, /غير متاح حالياً/);
+});

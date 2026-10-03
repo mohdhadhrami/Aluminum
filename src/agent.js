@@ -402,7 +402,22 @@ const defaultClient = () => (sharedClient ||= new Anthropic());
  * Handle one customer message and return the agent's reply.
  * @param opts { db, key, channel, phone, text, createQuote, notifyHuman, client? }
  */
-async function chat({ db, key, channel, phone, text, createQuote, notifyHuman, client }) {
+/* Last failure of the AI provider, shown in the admin panel (keys masked) */
+let lastError = null;
+const getLastError = () => lastError;
+const maskSecrets = (msg) => String(msg || '').replace(/(sk|key|token)[-_A-Za-z0-9]{8,}/gi, '$1-****').slice(0, 400);
+
+async function chat(opts) {
+    try {
+        return await runChat(opts);
+    } catch (err) {
+        lastError = { at: new Date().toISOString(), channel: opts.channel, provider: provider(), model: modelName(), message: maskSecrets(err.message) };
+        console.error('[agent]', opts.channel, lastError.message);
+        throw err;
+    }
+}
+
+async function runChat({ db, key, channel, phone, text, createQuote, notifyHuman, client }) {
     if (/^\s*(جديد|ابدأ من جديد|reset|restart)\s*$/i.test(text)) {
         resetConversation(db, key);
         return { reply: 'تم بدء محادثة جديدة 👋 كيف أقدر أساعدك؟', events: [] };
@@ -548,4 +563,4 @@ async function chatOpenAI({ db, key, channel, phone, text, createQuote, notifyHu
     return { reply: reply || '…', events: ctx.events };
 }
 
-module.exports = { chat, executeTool, TOOLS, OPENAI_TOOLS, isConfigured, resetConversation, systemPrompt, provider, modelName };
+module.exports = { chat, executeTool, TOOLS, OPENAI_TOOLS, isConfigured, resetConversation, systemPrompt, provider, modelName, getLastError };

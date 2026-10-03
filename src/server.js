@@ -31,7 +31,8 @@ const CATEGORIES = ['slat', 'accessory', 'machine'];
 const UNITS = ['meter', 'piece', 'm2', 'set', 'kg'];
 const QUOTE_STATUSES = ['new', 'contacted', 'accepted', 'rejected', 'done'];
 
-const httpError = (status, message) => Object.assign(new Error(message), { status });
+// expose: the message is written for the user (shown even for 5xx); other server errors stay generic
+const httpError = (status, message) => Object.assign(new Error(message), { status, expose: true });
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 function withPrices(product, settings) {
@@ -448,17 +449,23 @@ function createApp(db, { agentClient } = {}) {
         const text = String(req.body.message || '').trim().slice(0, 1000);
         if (!text) throw httpError(400, 'اكتب رسالتك');
 
-        const result = await inSessionOrder(session, () => agent.chat({
-            db, key: 'web:' + session, channel: 'website', phone: null, text, client: agentClient,
-            createQuote: (q) => saveQuote(db, q),
-            notifyHuman: async (summary) => {
-                const alert = `🙋 زائر الموقع يطلب التواصل مع فريق المبيعات\n\n${summary}`;
-                for (const to of mazbot.parseRecipients(settings.mazbot_recipients)) {
-                    const r = await mazbot.sendTextToPhone(to, alert);
-                    if (!r.ok) console.error('[chat] alert', to, r.error);
+        let result;
+        try {
+            result = await inSessionOrder(session, () => agent.chat({
+                db, key: 'web:' + session, channel: 'website', phone: null, text, client: agentClient,
+                createQuote: (q) => saveQuote(db, q),
+                notifyHuman: async (summary) => {
+                    const alert = `🙋 زائر الموقع يطلب التواصل مع فريق المبيعات\n\n${summary}`;
+                    for (const to of mazbot.parseRecipients(settings.mazbot_recipients)) {
+                        const r = await mazbot.sendTextToPhone(to, alert);
+                        if (!r.ok) console.error('[chat] alert', to, r.error);
+                    }
                 }
-            }
-        }));
+            }));
+        } catch (err) {
+            // The visitor gets a polite message; the reason is shown in the admin panel
+            throw httpError(502, 'عذراً، المساعد غير متاح مؤقتاً. حاول بعد قليل، أو تواصل معنا عبر واتساب.');
+        }
         const quotes = result.events.filter((e) => e.type === 'quote_created').map(({ quote }) => {
             notifySales(db, quote).catch((err) => console.error('[mazbot]', err.message));
             return {
@@ -503,6 +510,13 @@ function createApp(db, { agentClient } = {}) {
         if ((process.env.MAZBOT_WEBHOOK_SECRET || '').length < 16) missing.push('سر رابط Webhook (MAZBOT_WEBHOOK_SECRET)');
         if (missing.length) {
             warnings.push({ level: 'warning', text: 'إعدادات ناقصة في متغيرات البيئة: ' + missing.join('، ') + '.' });
+        }
+        const failure = agent.getLastError();
+        if (failure && Date.now() - Date.parse(failure.at) < 24 * 3600_000) {
+            warnings.push({
+                level: 'warning',
+                text: `آخر خطأ من الذكاء الاصطناعي (${failure.provider} — ${failure.model}) في ${failure.at.slice(0, 16).replace('T', ' ')} UTC: ${failure.message}`
+            });
         }
         res.json({ version: APP_VERSION, warnings });
     });
@@ -1012,11 +1026,17 @@ function createApp(db, { agentClient } = {}) {
         const session = String(req.body.session || 'default').slice(0, 40);
         const message = String(req.body.message || '').trim();
         if (!message) throw httpError(400, 'اكتب رسالة');
-        const result = await agent.chat({
-            db, key: 'test:' + session, channel: 'agent-test', phone: '96800000000', text: message,
-            createQuote: (q) => saveQuote(db, q),
-            notifyHuman: async () => {}
-        });
+        let result;
+        try {
+            result = await agent.chat({
+                db, key: 'test:' + session, channel: 'agent-test', phone: '96800000000', text: message,
+                createQuote: (q) => saveQuote(db, q),
+                notifyHuman: async () => {}
+            });
+        } catch (err) {
+            // The admin sees the real reason (wrong model name, no credit, invalid key...)
+            throw httpError(502, 'خطأ من الذكاء الاصطناعي: ' + agent.getLastError().message);
+        }
         res.json({
             reply: result.reply,
             events: result.events.map((e) => (e.type === 'quote_created'
@@ -1136,7 +1156,7 @@ function createApp(db, { agentClient } = {}) {
     app.use((err, req, res, next) => {
         const status = err.status || (err.type === 'entity.parse.failed' ? 400 : 500);
         if (status >= 500) console.error(err);
-        res.status(status).json({ error: status >= 500 ? 'خطأ في الخادم' : err.message });
+        res.status(status).json({ error: status >= 500 && !err.expose ? 'خطأ في الخادم' : err.message });
     });
 
     return app;
