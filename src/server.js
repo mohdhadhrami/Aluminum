@@ -487,6 +487,26 @@ function createApp(db, { agentClient } = {}) {
 
     admin.get('/settings', (req, res) => res.json(getSettings(db)));
 
+    /* Configuration problems shown as a banner in the admin panel (no secret values, only what is missing) */
+    admin.get('/system-status', (req, res) => {
+        const warnings = [];
+        if (!process.env.DB_FILE) {
+            warnings.push({
+                level: 'danger',
+                text: 'إعداد قاعدة البيانات DB_FILE غير موجود: النظام يستخدم قاعدة بيانات مؤقتة داخل مجلد التطبيق، وقد تُفقد عند إعادة النشر، ولا تظهر فيها أسعارك المحفوظة. أضف DB_FILE=~/radma-data/aluminum.db في متغيرات البيئة ثم أعد النشر، ولا تعدّل الأسعار قبل ذلك.'
+            });
+        }
+        const missing = [];
+        if (!agent.isConfigured()) missing.push('مفتاح الذكاء الاصطناعي (OPENAI_API_KEY)');
+        if (!mazbot.hasLogin()) missing.push('بيانات MazBot (MAZBOT_API_KEY / MAZBOT_STAFF_EMAIL / MAZBOT_STAFF_PASSWORD)');
+        else if (!mazbot.isConfigured()) missing.push('رقم قالب الرولينج شتر (MAZBOT_TEMPLATE_ID)');
+        if ((process.env.MAZBOT_WEBHOOK_SECRET || '').length < 16) missing.push('سر رابط Webhook (MAZBOT_WEBHOOK_SECRET)');
+        if (missing.length) {
+            warnings.push({ level: 'warning', text: 'إعدادات ناقصة في متغيرات البيئة: ' + missing.join('، ') + '.' });
+        }
+        res.json({ version: APP_VERSION, warnings });
+    });
+
     admin.put('/settings', (req, res) => {
         if (req.body.tax_mode !== undefined && !['accounting', 'industrial'].includes(req.body.tax_mode)) {
             throw httpError(400, 'وضع الضريبة غير صالح');
