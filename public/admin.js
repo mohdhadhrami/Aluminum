@@ -92,8 +92,18 @@ function applySettings(s) {
     $id('mazbotAgentEnabled').checked = Boolean(s.mazbot_agent_enabled);
     $id('websiteChatEnabled').checked = Boolean(s.website_chat_enabled);
     $id('websiteChatGreeting').value = s.website_chat_greeting || '';
+    $id('agentKnowledge').value = s.agent_knowledge || '';
     $id('chatSnippet').value = `<script src="${location.origin}/chat-widget.js" async></script>`;
     recalculateAll();
+}
+
+/* Save buttons on other tabs show the result next to themselves */
+function showSaved(text, kind) {
+    document.querySelectorAll('.settings-saved').forEach((el) => {
+        el.textContent = text;
+        el.className = 'status-text settings-saved ' + kind;
+        setTimeout(() => { el.textContent = ''; }, 4000);
+    });
 }
 
 async function saveSettingsToServer() {
@@ -122,13 +132,16 @@ async function saveSettingsToServer() {
             mazbot_recipients: $id('mazbotRecipients').value,
             mazbot_agent_enabled: $id('mazbotAgentEnabled').checked,
             website_chat_enabled: $id('websiteChatEnabled').checked,
-            website_chat_greeting: $id('websiteChatGreeting').value
+            website_chat_greeting: $id('websiteChatGreeting').value,
+            agent_knowledge: $id('agentKnowledge').value
         });
         applySettings(s);
         await loadProducts(); // LME-based prices depend on these settings
         setStatus('settingsStatus', 'تم الحفظ ✓', 'ok');
+        showSaved('تم الحفظ ✓', 'ok');
     } catch (err) {
         setStatus('settingsStatus', err.message, 'err');
+        showSaved(err.message, 'err');
     }
 }
 

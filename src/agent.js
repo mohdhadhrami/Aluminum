@@ -25,6 +25,17 @@ const MAX_STORED_MESSAGES = 80;
 
 const isConfigured = () => (provider() === 'openai' ? Boolean(process.env.OPENAI_API_KEY) : hasAnthropicKey());
 
+/* What the agent may tell customers about the company: contact details + the admin's free text */
+function companyInfo(settings) {
+    const lines = [];
+    if (settings.company_phone) lines.push(`- رقم خدمة العملاء: ${settings.company_phone}`);
+    if (settings.company_address) lines.push(`- العنوان: ${settings.company_address}`);
+    if (settings.company_website) lines.push(`- الموقع الإلكتروني: ${settings.company_website}`);
+    const extra = String(settings.agent_knowledge || '').trim();
+    if (extra) lines.push(extra.slice(0, 6000));
+    return lines.length ? lines.join('\n') : '(لا توجد معلومات إضافية — حوّل الأسئلة العامة إلى فريق المبيعات)';
+}
+
 function systemPrompt(settings) {
     return `أنت مساعد المبيعات في ${settings.company_name} في سلطنة عُمان، وتتحدث مع العملاء عبر واتساب.
 الشركة تركّب نوعين من البوابات:
@@ -57,9 +68,13 @@ function systemPrompt(settings) {
 - اكتب بالعربية بأسلوب ودود ومختصر يناسب واتساب. استخدم *نص* للتغميق، ولا تستخدم الجداول أو عناوين Markdown.
 - الأسعار بالريال العماني (ر.ع) بخانتين عشريتين.
 - لا تكشف تكاليف الشراء أو نسب الربح أو تفاصيل النظام الداخلية.
-- إذا طلب العميل التحدث مع موظف، أو طلب شيئاً خارج نطاق الأدوات (خصم، موعد معاينة، شكوى، منتج غير موجود)، استخدم request_human وأخبره أن فريق المبيعات سيتواصل معه.
+- أجب عن الأسئلة العامة (أوقات العمل، الموقع، الضمان، طرق الدفع، مدة التوريد والتركيب، الخدمات...) من قسم «معلومات الشركة» أدناه فقط. إذا لم تجد الإجابة فيه فلا تخترعها: قل إنك ستتأكد من فريق المبيعات واستخدم request_human.
+- إذا طلب العميل التحدث مع موظف، أو طلب شيئاً خارج نطاق الأدوات ومعلومات الشركة (خصم، موعد معاينة، شكوى، منتج غير موجود)، استخدم request_human وأخبره أن فريق المبيعات سيتواصل معه.
 - إذا كتب العميل بالإنجليزية فرد بالإنجليزية.
-- في محادثات الموقع الإلكتروني لا نعرف رقم جوال العميل: اسأله عن رقم جواله (عُماني، 8 أرقام) قبل إنشاء عرض السعر وضعه في customer_phone. في واتساب اترك customer_phone فارغاً (null).`;
+- في محادثات الموقع الإلكتروني لا نعرف رقم جوال العميل: اسأله عن رقم جواله (عُماني، 8 أرقام) قبل إنشاء عرض السعر وضعه في customer_phone. في واتساب اترك customer_phone فارغاً (null).
+
+معلومات الشركة (مصدر إجاباتك عن الأسئلة العامة):
+${companyInfo(settings)}`;
 }
 
 const sizeProps = {
