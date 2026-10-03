@@ -1227,9 +1227,22 @@ window.switchTab = function (tabId) {
     if (tabId === 'agent') loadKnowledge().catch(() => {});
 };
 
+/* Red/yellow banner when the server is misconfigured (e.g. DB_FILE missing after re-linking the app) */
+async function loadSystemStatus() {
+    const s = await api('GET', '/api/admin/system-status');
+    const box = $id('systemWarnings');
+    box.hidden = !s.warnings.length;
+    box.innerHTML = s.warnings.map((w) => `
+        <div role="alert" style="margin: 0 0 14px; padding: 14px 18px; border-radius: 10px; line-height: 1.8; font-weight: 700;
+            ${w.level === 'danger' ? 'background:#fdecea; color:#a93226; border:2px solid #e74c3c;' : 'background:#fff7e6; color:#8a5a00; border:2px solid #f5b041;'}">
+            ${w.level === 'danger' ? '⛔' : '⚠️'} ${esc(w.text)}
+        </div>`).join('');
+}
+
 async function initAdmin() {
     applySettings(await api('GET', '/api/admin/settings'));
     online = true;
+    loadSystemStatus().catch(() => {});
     await Promise.all([loadProducts(), loadPurchases(), loadHooks(), loadAgentStatus(), loadMazbotStatus()]);
 }
 

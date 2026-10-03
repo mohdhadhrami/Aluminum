@@ -76,3 +76,26 @@ test('admin API locks an IP out after repeated wrong passwords', async (t) => {
     // The public calculator keeps working without any password
     assert.strictEqual((await fetch(base + '/api/public/configurator')).status, 200);
 });
+
+test('admin shows a warning when DB_FILE or important keys are missing', async (t) => {
+    const saved = { db: process.env.DB_FILE, o: process.env.OPENAI_API_KEY, a: process.env.ANTHROPIC_API_KEY };
+    delete process.env.DB_FILE; delete process.env.OPENAI_API_KEY; delete process.env.ANTHROPIC_API_KEY;
+    t.after(() => {
+        for (const [k, v] of [['DB_FILE', saved.db], ['OPENAI_API_KEY', saved.o], ['ANTHROPIC_API_KEY', saved.a]]) {
+            if (v) process.env[k] = v; else delete process.env[k];
+        }
+    });
+    const { server, base } = await start();
+    t.after(() => server.close());
+    const get = () => fetch(base + '/api/admin/system-status', { headers: { Authorization: 'Bearer test-token' } }).then((r) => r.json());
+
+    let s = await get();
+    assert.strictEqual(s.warnings[0].level, 'danger');
+    assert.match(s.warnings[0].text, /DB_FILE/);
+    assert.match(s.warnings[1].text, /OPENAI_API_KEY/);
+
+    process.env.DB_FILE = '~/radma-data/aluminum.db';
+    s = await get();
+    assert.ok(!s.warnings.some((w) => w.level === 'danger'));
+    assert.strictEqual((await fetch(base + '/api/admin/system-status')).status, 401);
+});
