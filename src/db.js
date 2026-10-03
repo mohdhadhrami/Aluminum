@@ -22,6 +22,8 @@ const DEFAULT_SETTINGS = {
     mazbot_agent_enabled: false,
     // Chat bubble on the company website (chat-widget.js) answered by the same AI agent
     website_chat_enabled: false,
+    // Company information the AI agent answers from (hours, location, warranty, FAQ...) — edited in the admin panel
+    agent_knowledge: '',
     website_chat_greeting: 'مرحباً بك 👋 أنا المساعد الذكي. أستطيع حساب سعر بوابات الرول شتر والأوفرهيد لك خلال دقائق. ما المقاس الذي تحتاجه؟',    // رقم واتساب الشركة بالصيغة الدولية مثل 9689XXXXXXX
     public_base_url: '',     // رابط هذا النظام (مثل https://calcshutter.radma.co)، يستخدم في رسائل واتساب وروابط PDF
     quote_validity_days: 15, // مدة صلاحية عرض السعر

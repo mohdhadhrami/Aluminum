@@ -1266,6 +1266,30 @@
         <div id="tab-agent" class="tab-content">
             <div class="card">
                 <div class="card-title">
+                    <span class="icon">i</span>
+                    معلومات الشركة للمساعد الذكي
+                </div>
+                <p class="status-text" style="margin-top:0">يجيب المساعد (في واتساب والموقع) عن الأسئلة العامة من هذا النص فقط: أوقات العمل، الموقع، الضمان، طرق الدفع، مدة التوريد، الخدمات، الأسئلة الشائعة... وإذا لم يجد الإجابة هنا يحوّل العميل لفريق المبيعات. رقم خدمة العملاء والعنوان والموقع الإلكتروني تُضاف تلقائياً من «بيانات الشركة». تعليمات منصة MazBot لا تصل لهذا المساعد — اكتبها هنا.</p>
+                <div class="form-grid">
+                    <div class="form-group" style="grid-column: 1 / -1;">
+                        <textarea id="agentKnowledge" rows="12" maxlength="6000" placeholder="أوقات العمل: من السبت إلى الخميس، 8 صباحاً – 6 مساءً. الجمعة إجازة.
+الموقع: نزوى – سعال (رابط الخريطة: ...)
+الضمان: 5 سنوات على عيوب التصنيع.
+طرق الدفع: نقداً أو تحويل بنكي، 70% عند التعاقد و30% قبل التركيب.
+مدة التوريد والتركيب: خلال 14 يوماً من تأكيد الطلب.
+الخدمات: تركيب وصيانة بوابات الرول شتر والأوفرهيد، مكائن البوابات، أنظمة التحكم بالدخول.
+المعاينة: مجانية داخل نزوى."></textarea>
+                    </div>
+                </div>
+                <div class="db-actions">
+                    <button class="btn btn-accent" onclick="saveSettingsToServer()">حفظ</button>
+                    <span class="status-text settings-saved"></span>
+                    <span class="status-text">— يسري على الرسائل التالية مباشرة، دون إعادة نشر.</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
                     <span class="icon">AI</span>
                     تجربة المساعد الذكي (نفس مساعد واتساب)
                 </div>
