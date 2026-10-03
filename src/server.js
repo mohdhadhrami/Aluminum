@@ -23,6 +23,7 @@ const agent = require('./agent');
 const mazbot = require('./mazbot');
 const backup = require('./backup');
 const mazbotInbox = require('./mazbot-inbox');
+const knowledge = require('./knowledge');
 const { renderQuotePdf } = require('./pdf');
 
 const APP_VERSION = require('../package.json').version;
@@ -908,6 +909,40 @@ function createApp(db, { agentClient } = {}) {
         const file = backup.backupPath(req.params.name);
         if (!file) throw httpError(404, 'النسخة غير موجودة');
         res.json(await restore(req, fs.readFileSync(file)));
+    }));
+
+    /* ---- Knowledge base of the AI agent ---- */
+
+    const knowledgeInfo = () => {
+        const items = knowledge.list(db);
+        const activeChars = items.filter((i) => i.active).reduce((n, i) => n + i.title.length + i.content.length, 0);
+        return { items, active_chars: activeChars, mode: activeChars <= knowledge.FULL_PROMPT_LIMIT ? 'full' : 'search', full_limit: knowledge.FULL_PROMPT_LIMIT };
+    };
+
+    admin.get('/knowledge', (req, res) => res.json(knowledgeInfo()));
+
+    admin.post('/knowledge', (req, res) => {
+        knowledge.add(db, req.body || {});
+        res.status(201).json(knowledgeInfo());
+    });
+
+    admin.put('/knowledge/:id', (req, res) => {
+        knowledge.update(db, req.params.id, req.body || {});
+        res.json(knowledgeInfo());
+    });
+
+    admin.delete('/knowledge/:id', (req, res) => {
+        db.prepare('DELETE FROM knowledge_items WHERE id = ?').run(Number(req.params.id));
+        res.json(knowledgeInfo());
+    });
+
+    /* Upload a document (PDF, Word, text): its text becomes a knowledge item; the file itself is not kept */
+    admin.post('/knowledge/upload', express.raw({ type: () => true, limit: '10mb' }), asyncRoute(async (req, res) => {
+        if (!Buffer.isBuffer(req.body) || !req.body.length) throw httpError(400, 'اختر ملفاً');
+        let name = 'document.txt';
+        try { name = decodeURIComponent(req.get('X-Filename') || name); } catch { /* keep default */ }
+        await knowledge.addDocument(db, req.body, name);
+        res.status(201).json(knowledgeInfo());
     }));
 
     /* ---- MazBot: WhatsApp template to the sales numbers ---- */

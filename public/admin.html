@@ -1290,6 +1290,57 @@
 
             <div class="card">
                 <div class="card-title">
+                    <span class="icon">✎</span>
+                    التوجيهات
+                </div>
+                <p class="status-text" style="margin-top:0">تعليماتك لأسلوب المساعد وتصرفه، مثل: طريقة الترحيب، الأسلوب (رسمي/ودود)، ما يجب ذكره أو تجنبه، متى يحوّل للمبيعات. تُضاف بعد القواعد الأساسية للنظام (الأسعار تأتي دائماً من الحاسبة ولا يمكن تغييرها من هنا).</p>
+                <div class="form-grid">
+                    <div class="form-group" style="grid-column: 1 / -1;">
+                        <textarea id="agentInstructions" rows="8" maxlength="6000" placeholder="- رحّب بالعميل باسم ردما للبوابات الإلكترونية.
+- استخدم أسلوباً ودوداً ومختصراً، ولهجة عُمانية بسيطة إن كتب العميل بالعامية.
+- اقترح المعاينة المجانية عند الطلبات الكبيرة.
+- لا تعد بمواعيد تركيب محددة؛ قل إن فريق المبيعات سيؤكد الموعد."></textarea>
+                    </div>
+                </div>
+                <div class="db-actions">
+                    <button class="btn btn-accent" onclick="saveSettingsToServer()">حفظ</button>
+                    <span class="status-text settings-saved"></span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">📚</span>
+                    قاعدة المعرفة (AI Knowledge Base)
+                </div>
+                <p class="status-text" style="margin-top:0">أسئلة شائعة ومعلومات ومستندات يرجع إليها المساعد عند الإجابة. يمكن رفع ملفات PDF أو Word (docx) أو نصية (txt) — يُستخرج نصها ويُحفظ هنا (يمكن تعديله)، ولا يُحفظ الملف نفسه. <span id="kbStats"></span></p>
+                <input type="hidden" id="kbId">
+                <div class="form-grid">
+                    <div class="form-group"><label>النوع</label>
+                        <select id="kbKind" onchange="kbKindChanged()">
+                            <option value="faq">سؤال وجواب</option>
+                            <option value="info">معلومة</option>
+                            <option value="document">مستند</option>
+                        </select></div>
+                    <div class="form-group" style="grid-column: span 2;"><label id="kbTitleLabel">السؤال</label><input type="text" id="kbTitle" maxlength="300"></div>
+                    <div class="form-group" style="grid-column: 1 / -1;"><label id="kbContentLabel">الجواب</label><textarea id="kbContent" rows="5"></textarea></div>
+                </div>
+                <div class="db-actions">
+                    <button class="btn btn-primary" id="kbSaveBtn" onclick="saveKnowledge()">إضافة</button>
+                    <button class="btn btn-outline" onclick="resetKnowledgeForm()">جديد</button>
+                    <label class="btn btn-outline" style="cursor:pointer">رفع مستند (PDF / Word / txt)…
+                        <input type="file" id="kbFile" accept=".pdf,.docx,.txt,.md,.csv" hidden onchange="uploadKnowledge(this)">
+                    </label>
+                    <span id="kbStatus" class="status-text"></span>
+                </div>
+                <div class="table-wrapper" style="margin-top: 14px;"><table>
+                    <thead><tr><th>النوع</th><th>العنوان / السؤال</th><th>الحجم</th><th>مفعّل</th><th></th></tr></thead>
+                    <tbody id="kbRows"></tbody>
+                </table></div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
                     <span class="icon">AI</span>
                     تجربة المساعد الذكي (نفس مساعد واتساب)
                 </div>

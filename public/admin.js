@@ -93,6 +93,7 @@ function applySettings(s) {
     $id('websiteChatEnabled').checked = Boolean(s.website_chat_enabled);
     $id('websiteChatGreeting').value = s.website_chat_greeting || '';
     $id('agentKnowledge').value = s.agent_knowledge || '';
+    $id('agentInstructions').value = s.agent_instructions || '';
     $id('chatSnippet').value = `<script src="${location.origin}/chat-widget.js" async></script>`;
     recalculateAll();
 }
@@ -133,7 +134,8 @@ async function saveSettingsToServer() {
             mazbot_agent_enabled: $id('mazbotAgentEnabled').checked,
             website_chat_enabled: $id('websiteChatEnabled').checked,
             website_chat_greeting: $id('websiteChatGreeting').value,
-            agent_knowledge: $id('agentKnowledge').value
+            agent_knowledge: $id('agentKnowledge').value,
+            agent_instructions: $id('agentInstructions').value
         });
         applySettings(s);
         await loadProducts(); // LME-based prices depend on these settings
@@ -833,6 +835,96 @@ async function addRegion() {
     }
 }
 
+/* --------------------------- Knowledge base ------------------------- */
+
+const KB_KINDS = { faq: 'سؤال وجواب', info: 'معلومة', document: 'مستند' };
+let kbItems = [];
+
+function renderKnowledge(data) {
+    kbItems = data.items;
+    $id('kbStats').textContent = `— الحجم المفعّل: ${data.active_chars.toLocaleString('ar-OM')} حرف` +
+        (data.mode === 'full' ? ' (يقرأها المساعد كاملة)' : ' (كبيرة: يبحث فيها المساعد عند كل سؤال)');
+    $id('kbRows').innerHTML = kbItems.map((i) => `
+        <tr>
+            <td>${esc(KB_KINDS[i.kind] || i.kind)}</td>
+            <td>${esc(i.title)}${i.source_name ? `<br><small class="status-text">${esc(i.source_name)}</small>` : ''}</td>
+            <td>${i.content.length.toLocaleString('ar-OM')}</td>
+            <td><input type="checkbox" ${i.active ? 'checked' : ''} onchange="toggleKnowledge(${i.id}, this.checked)"></td>
+            <td>
+                <button class="btn btn-outline btn-sm" onclick="editKnowledge(${i.id})">تعديل</button>
+                <button class="btn btn-outline btn-sm" onclick="deleteKnowledge(${i.id})">حذف</button>
+            </td>
+        </tr>`).join('') || '<tr><td colspan="5">لا توجد عناصر بعد — أضف سؤالاً وجواباً أو ارفع مستنداً.</td></tr>';
+}
+
+async function loadKnowledge() {
+    renderKnowledge(await api('GET', '/api/admin/knowledge'));
+}
+
+function kbKindChanged() {
+    const faq = $id('kbKind').value === 'faq';
+    $id('kbTitleLabel').textContent = faq ? 'السؤال' : 'العنوان';
+    $id('kbContentLabel').textContent = faq ? 'الجواب' : 'المحتوى';
+}
+
+function resetKnowledgeForm() {
+    $id('kbId').value = '';
+    $id('kbKind').value = 'faq';
+    $id('kbTitle').value = '';
+    $id('kbContent').value = '';
+    $id('kbSaveBtn').textContent = 'إضافة';
+    kbKindChanged();
+}
+
+function editKnowledge(id) {
+    const i = kbItems.find((x) => x.id === id);
+    if (!i) return;
+    $id('kbId').value = i.id;
+    $id('kbKind').value = i.kind;
+    $id('kbTitle').value = i.title;
+    $id('kbContent').value = i.content;
+    $id('kbSaveBtn').textContent = 'حفظ التعديل';
+    kbKindChanged();
+    $id('kbTitle').focus();
+}
+
+async function saveKnowledge() {
+    const body = { kind: $id('kbKind').value, title: $id('kbTitle').value, content: $id('kbContent').value };
+    const id = $id('kbId').value;
+    try {
+        renderKnowledge(await api(id ? 'PUT' : 'POST', '/api/admin/knowledge' + (id ? '/' + id : ''), body));
+        setStatus('kbStatus', 'تم الحفظ ✓', 'ok');
+        resetKnowledgeForm();
+    } catch (err) {
+        setStatus('kbStatus', err.message, 'err');
+    }
+}
+
+async function toggleKnowledge(id, active) {
+    try { renderKnowledge(await api('PUT', '/api/admin/knowledge/' + id, { active })); } catch (err) { alert(err.message); }
+}
+
+async function deleteKnowledge(id) {
+    const i = kbItems.find((x) => x.id === id);
+    if (!confirm(`حذف «${i ? i.title : ''}» من قاعدة المعرفة؟`)) return;
+    try { renderKnowledge(await api('DELETE', '/api/admin/knowledge/' + id)); } catch (err) { alert(err.message); }
+}
+
+async function uploadKnowledge(input) {
+    const file = input.files[0];
+    input.value = '';
+    if (!file) return;
+    setStatus('kbStatus', 'جاري قراءة الملف...');
+    try {
+        const res = await authFetch('POST', '/api/admin/knowledge/upload', file,
+            { 'Content-Type': 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name) });
+        renderKnowledge(await res.json());
+        setStatus('kbStatus', `تمت إضافة «${file.name}» ✓ — راجع النص المستخرج بزر «تعديل»`, 'ok');
+    } catch (err) {
+        setStatus('kbStatus', err.message, 'err');
+    }
+}
+
 /* --------------------------- Backup / restore ------------------------ */
 
 const BACKUP_KINDS = { auto: 'تلقائية يومية', 'before-restore': 'قبل الاستعادة', manual: 'يدوية' };
@@ -1132,6 +1224,7 @@ window.switchTab = function (tabId) {
     if (tabId === 'doors') { loadDoors(); loadBackups().catch(() => {}); }
     if (tabId === 'overhead') loadOverhead();
     if (tabId === 'integrations') loadInbound().catch(() => {});
+    if (tabId === 'agent') loadKnowledge().catch(() => {});
 };
 
 async function initAdmin() {

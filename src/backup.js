@@ -27,10 +27,11 @@ const TABLES = [
     ['governorates', 'المحافظات'],
     ['regions', 'الولايات'],
     ['overhead_sizes', 'مقاسات الأوفرهيد'],
-    ['overhead_motors', 'محركات الأوفرهيد']
+    ['overhead_motors', 'محركات الأوفرهيد'],
+    ['knowledge_items', 'قاعدة المعرفة']
 ];
 /* Sheets added after the first backups: an older file without them keeps the current data */
-const OPTIONAL = new Set(['overhead_sizes', 'overhead_motors']);
+const OPTIONAL = new Set(['overhead_sizes', 'overhead_motors', 'knowledge_items']);
 const INFO_SHEET = 'معلومات';
 const err400 = (message) => Object.assign(new Error(message), { status: 400 });
 
